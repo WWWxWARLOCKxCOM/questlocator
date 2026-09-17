@@ -1,0 +1,26 @@
+# ─── Node ───
+node_modules/
+functions/node_modules/
+functions/lib/
+*.log
+
+# ─── Expo / React Native ───
+.expo/
+dist/
+web-build/
+ios/
+android/
+
+# ─── Секреты и ключи (НЕ коммитить!) ───
+.env
+.env.local
+.env.*.local
+google-services.json
+GoogleService-Info.plist
+*.keystore
+*.jks
+.firebase/
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
