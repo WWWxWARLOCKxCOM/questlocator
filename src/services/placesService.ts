@@ -1,6 +1,22 @@
+/**
+ * Работа с заведениями (коллекция places в Firestore).
+ *
+ * Подписки — через onSnapshot с real-time обновлениями. Создание заведения —
+ * через addDoc, после чего вызывается Cloud Function generatePlaceQr,
+ * которая генерирует QR-код в формате quest://place/{placeId} и сохраняет
+ * его в поле qrCode этого же документа.
+ */
 import {
-  collection, doc, onSnapshot, query, where, orderBy,
-  addDoc, updateDoc, deleteDoc, serverTimestamp,
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/config/firebase';
@@ -11,30 +27,64 @@ const COL = 'places';
 function fromDoc(id: string, d: any): Place {
   return {
     id,
-    name: d.name,
-    address: d.address,
-    latitude: d.latitude,
-    longitude: d.longitude,
-    category: d.category,
+    name: d.name ?? '',
+    address: d.address ?? '',
+    latitude: d.latitude ?? 0,
+    longitude: d.longitude ?? 0,
+    category: d.category ?? 'cafe',
     qrCode: d.qrCode ?? '',
-    isActive: d.isActive,
+    isActive: d.isActive ?? false,
+    radiusMeters: typeof d.radiusMeters === 'number' ? d.radiusMeters : 50,
     createdAt: d.createdAt?.toMillis?.() ?? 0,
   };
 }
 
-function subscribe(filterActiveOnly: boolean, cb: (places: Place[]) => void) {
+/**
+ * Общая функция подписки. Если filterActiveOnly = true, отдаём только
+ * активные заведения (для карты клиента). Иначе — все (для админ-панели).
+ */
+function subscribeToPlaces(
+  filterActiveOnly: boolean,
+  callback: (places: Place[]) => void,
+) {
   const q = filterActiveOnly
-    ? query(collection(db, COL), where('isActive', '==', true), orderBy('name'))
+    ? query(
+        collection(db, COL),
+        where('isActive', '==', true),
+        orderBy('name'),
+      )
     : query(collection(db, COL), orderBy('name'));
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => fromDoc(d.id, d.data())));
-  });
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => fromDoc(d.id, d.data())));
+    },
+    (error) => {
+      // eslint-disable-next-line no-console
+      console.warn('[placesService] onSnapshot error:', error.message);
+      callback([]);
+    },
+  );
 }
 
-export function subscribeToActivePlaces(cb: (p: Place[]) => void) { return subscribe(true, cb); }
-export function subscribeToAllPlaces(cb: (p: Place[]) => void) { return subscribe(false, cb); }
+/** Подписка на все активные заведения (для карты клиента). */
+export function subscribeToActivePlaces(callback: (places: Place[]) => void) {
+  return subscribeToPlaces(true, callback);
+}
 
-export async function createPlace(input: Omit<Place, 'id' | 'qrCode' | 'createdAt'>) {
+/** Подписка на все заведения (для админ-панели, включая неактивные). */
+export function subscribeToAllPlaces(callback: (places: Place[]) => void) {
+  return subscribeToPlaces(false, callback);
+}
+
+/**
+ * Создаёт документ заведения. qrCode заполняется серверной функцией
+ * generatePlaceQr сразу после создания — клиенту не нужно его передавать.
+ */
+export async function createPlace(
+  input: Omit<Place, 'id' | 'qrCode' | 'createdAt'>,
+): Promise<string> {
   const ref = await addDoc(collection(db, COL), {
     name: input.name,
     address: input.address,
@@ -42,16 +92,28 @@ export async function createPlace(input: Omit<Place, 'id' | 'qrCode' | 'createdA
     longitude: input.longitude,
     category: input.category,
     isActive: input.isActive,
+    radiusMeters: input.radiusMeters,
     qrCode: '',
     createdAt: serverTimestamp(),
   });
-  // Триггер onPlaceCreated в Cloud Functions сам сгенерирует qrCode
-  const fn = httpsCallable(functions, 'generatePlaceQr');
-  await fn({ placeId: ref.id });
+
+  // Генерируем QR на сервере (Cloud Function). Если что-то пойдёт не так —
+  // заведение уже создано, QR можно перегенерировать через админку.
+  try {
+    const fn = httpsCallable<{ placeId: string }, { ok: boolean; value: string }>(
+      functions,
+      'generatePlaceQr',
+    );
+    await fn({ placeId: ref.id });
+  } catch (e: any) {
+    // eslint-disable-next-line no-console
+    console.warn('[placesService] generatePlaceQr failed:', e?.message);
+  }
+
   return ref.id;
 }
 
-export async function updatePlace(id: string, patch: Partial<Place>) {
+export async function updatePlace(id: string, patch: Partial<Place>): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (patch.name !== undefined) payload.name = patch.name;
   if (patch.address !== undefined) payload.address = patch.address;
@@ -59,9 +121,11 @@ export async function updatePlace(id: string, patch: Partial<Place>) {
   if (patch.longitude !== undefined) payload.longitude = patch.longitude;
   if (patch.category !== undefined) payload.category = patch.category;
   if (patch.isActive !== undefined) payload.isActive = patch.isActive;
+  if (patch.radiusMeters !== undefined) payload.radiusMeters = patch.radiusMeters;
+
   await updateDoc(doc(db, COL, id), payload);
 }
 
-export async function deletePlace(id: string) {
+export async function deletePlace(id: string): Promise<void> {
   await deleteDoc(doc(db, COL, id));
 }

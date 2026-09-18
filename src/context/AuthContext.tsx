@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onIdTokenChanged, User } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 
 interface AuthContextValue {
@@ -9,7 +9,9 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  user: null, isAdmin: false, isLoading: true,
+  user: null,
+  isAdmin: false,
+  isLoading: true,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -18,11 +20,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async (nextUser) => {
+    // onIdTokenChanged срабатывает и при логине, и при обновлении токена
+    // (в том числе после getIdToken(true) — когда админ получает custom claim).
+    return onIdTokenChanged(auth, async (nextUser) => {
       setUser(nextUser);
       if (nextUser) {
-        const token = await nextUser.getIdTokenResult(true);
-        setIsAdmin(token.claims.admin === true);
+        try {
+          const token = await nextUser.getIdTokenResult();
+          setIsAdmin(token.claims.admin === true);
+        } catch {
+          setIsAdmin(false);
+        }
       } else {
         setIsAdmin(false);
       }
@@ -37,4 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth() { return useContext(AuthContext); }
+export function useAuth() {
+  return useContext(AuthContext);
+}

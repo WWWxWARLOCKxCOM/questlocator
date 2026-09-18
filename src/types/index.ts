@@ -1,12 +1,5 @@
-/**
- * Общие типы данных приложения QuestLocator.
- * Соответствуют структуре коллекций Firestore из ТЗ (раздел 5).
- */
-
 export type PlaceCategory = 'restaurant' | 'museum' | 'cafe' | 'shop';
-
 export type SessionStatus = 'in_progress' | 'paused' | 'completed';
-
 export type PhotoStatus = 'pending' | 'approved' | 'rejected';
 
 export interface AppUser {
@@ -14,7 +7,8 @@ export interface AppUser {
   name: string;
   email: string;
   balance: number;
-  createdAt: number; // ms since epoch
+  avatarUrl?: string;
+  createdAt: number;
 }
 
 export interface Place {
@@ -24,8 +18,9 @@ export interface Place {
   latitude: number;
   longitude: number;
   category: PlaceCategory;
-  qrCode: string; // например, quest://place/abc123
+  qrCode: string;
   isActive: boolean;
+  radiusMeters: number;
   createdAt: number;
 }
 
@@ -36,7 +31,7 @@ export interface Quest {
   maxTimeMinutes: number;
   rewardPoints: number;
   promocode?: string;
-  photoBonusMultiplier: number; // например, 1.3
+  photoBonusMultiplier: number;
   photoRequired: boolean;
   referenceImages: string[];
   isActive: boolean;
@@ -55,6 +50,7 @@ export interface QuestSession {
   photosSubmitted: string[];
   photoBonusApplied: boolean;
   status: SessionStatus;
+  promocode?: string;
   pausedAt?: number;
   accumulatedPausedMs?: number;
 }
@@ -71,7 +67,6 @@ export interface QuestPhoto {
   createdAt: number;
 }
 
-/** Цвет пина на карте — производится на клиенте из состояния места/сессии. */
 export type PinStatus = 'available' | 'unavailable' | 'active_session';
 
 export interface GeoPoint {

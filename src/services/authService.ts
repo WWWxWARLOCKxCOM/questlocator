@@ -17,6 +17,7 @@ export async function signUpWithEmail(email: string, password: string, name: str
     email,
     name,
     balance: 0,
+    avatarUrl: null,
     createdAt: serverTimestamp(),
   });
   return cred.user;
@@ -36,17 +37,36 @@ export async function signOut() {
 }
 
 /**
- * Скрытая проверка админ-доступа. Пользователь уже должен быть залогинен
- * по email/паролю (обычная регистрация). Серверная функция сверяет email
- * с секретом ADMIN_EMAIL и выставляет custom claim admin=true.
+ * Вход в админку.
+ * 1. Логинимся по email/паролю (иначе Cloud Function вернёт unauthenticated).
+ * 2. verifyAdminCredentials сверяет email с секретом ADMIN_EMAIL и выставляет
+ *    custom claim admin=true.
+ * 3. Принудительно обновляем токен — onIdTokenChanged в AuthContext поймает
+ *    изменение и переключит навигацию на админскую.
  */
-export async function attemptAdminLogin(_email: string, _password: string) {
-  const fn = httpsCallable<unknown, { ok: boolean; message?: string }>(
-    functions, 'verifyAdminCredentials',
-  );
-  const res = await fn({});
-  if (!res.data.ok) return { ok: false, message: res.data.message };
-  // Обновляем токен, чтобы custom claim применился
-  await auth.currentUser?.getIdToken(true);
+export async function attemptAdminLogin(email: string, password: string) {
+  let cred;
+  try {
+    cred = await signInWithEmailAndPassword(auth, email, password);
+  } catch {
+    return { ok: false, message: 'Неверные email или пароль.' };
+  }
+
+  try {
+    const fn = httpsCallable<unknown, { ok: boolean; message?: string }>(
+      functions,
+      'verifyAdminCredentials',
+    );
+    const res = await fn({});
+    if (!res.data.ok) {
+      await firebaseSignOut(auth);
+      return { ok: false, message: res.data.message ?? 'Этот аккаунт не является администратором.' };
+    }
+  } catch {
+    await firebaseSignOut(auth);
+    return { ok: false, message: 'Не удалось проверить права. Попробуйте позже.' };
+  }
+
+  await cred.user.getIdToken(true);
   return { ok: true };
 }

@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useNavigation } from '@react-navigation/native';
+import { DrawerActions } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { ClientStackParamList } from '@/navigation/ClientNavigator';
 import { subscribeToActivePlaces } from '@/services/placesService';
 import { subscribeToActiveQuestForPlace } from '@/services/questService';
@@ -13,9 +15,9 @@ import { Place, Quest, PinStatus, GeoPoint } from '@/types';
 type Nav = NativeStackNavigationProp<ClientStackParamList>;
 
 const PIN_COLORS: Record<PinStatus, string> = {
-  available: '#2ecc71', // 🟢
-  unavailable: '#e74c3c', // 🔴
-  active_session: '#f1c40f', // 🟡
+  available: '#2ecc71',
+  unavailable: '#e74c3c',
+  active_session: '#f1c40f',
 };
 
 export default function MapScreen() {
@@ -50,8 +52,6 @@ export default function MapScreen() {
   }, [userLocation]);
 
   const pinStatusFor = useCallback((place: Place): PinStatus => {
-    // TODO: заменить на реальную проверку "пользователь внутри активной сессии этого места",
-    // подписавшись на текущую сессию пользователя (см. sessionService.subscribeToSession).
     if (!place.isActive) return 'unavailable';
     return 'available';
   }, []);
@@ -66,6 +66,10 @@ export default function MapScreen() {
     });
   };
 
+  const openDrawer = () => {
+    navigation.dispatch(DrawerActions.openDrawer());
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -76,14 +80,28 @@ export default function MapScreen() {
         showsMyLocationButton
       >
         {places.map((place) => (
-          <Marker
-            key={place.id}
-            coordinate={{ latitude: place.latitude, longitude: place.longitude }}
-            pinColor={PIN_COLORS[pinStatusFor(place)]}
-            onPress={() => setSelectedPlace(place)}
-          />
+          <React.Fragment key={place.id}>
+            <Marker
+              coordinate={{ latitude: place.latitude, longitude: place.longitude }}
+              pinColor={PIN_COLORS[pinStatusFor(place)]}
+              onPress={() => setSelectedPlace(place)}
+            />
+            {selectedPlace?.id === place.id && (
+              <Circle
+                center={{ latitude: place.latitude, longitude: place.longitude }}
+                radius={place.radiusMeters ?? 50}
+                strokeColor="rgba(46,204,113,0.8)"
+                fillColor="rgba(46,204,113,0.15)"
+              />
+            )}
+          </React.Fragment>
         ))}
       </MapView>
+
+      {/* Кнопка-гамбургер поверх карты */}
+      <TouchableOpacity style={styles.hamburger} onPress={openDrawer}>
+        <Ionicons name="menu" size={28} color="#000" />
+      </TouchableOpacity>
 
       {selectedPlace && (
         <BottomSheet index={0} snapPoints={['35%']} onClose={() => setSelectedPlace(null)}>
@@ -98,11 +116,11 @@ export default function MapScreen() {
                 </Text>
                 <Text>Награда: {selectedQuest.rewardPoints} баллов</Text>
                 {selectedQuest.photoRequired || selectedQuest.photoBonusMultiplier > 1 ? (
-                  <Text>
-                    Бонус за фото: множитель ×{selectedQuest.photoBonusMultiplier}
-                  </Text>
+                  <Text>Бонус за фото: ×{selectedQuest.photoBonusMultiplier}</Text>
                 ) : null}
-                <ScanButton onPress={handleStartScan} />
+                <TouchableOpacity style={styles.scanButton} onPress={handleStartScan}>
+                  <Text style={styles.scanButtonText}>Сканировать QR и начать</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <Text>Активных квестов здесь сейчас нет.</Text>
@@ -114,18 +132,24 @@ export default function MapScreen() {
   );
 }
 
-function ScanButton({ onPress }: { onPress: () => void }) {
-  return (
-    <View style={styles.scanButton}>
-      <Text style={styles.scanButtonText} onPress={onPress}>
-        Сканировать QR и начать
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  hamburger: {
+    position: 'absolute',
+    top: 48,
+    left: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
   sheetContent: { padding: 16, gap: 8 },
   placeName: { fontSize: 18, fontWeight: '700' },
   placeAddress: { color: '#666' },

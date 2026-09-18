@@ -1,5 +1,34 @@
 import 'dotenv/config';
 import { ExpoConfig, ConfigContext } from 'expo/config';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// ─────────── Проверки на этапе сборки ───────────
+const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
+if (!mapsKey) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '\n[QuestLocator] ⚠️  GOOGLE_MAPS_API_KEY не задан.\n' +
+      'Карта на Android/iOS будет серой.\n' +
+      'Проверьте .env в корне проекта и пересоберите:\n' +
+      '  npx expo prebuild --clean\n',
+  );
+}
+
+// google-services.json нужен для нативной интеграции с Firebase
+// (карты, push, аналитика). Если файла нет — не валим сборку,
+// а просто предупреждаем. Файл можно скачать из Firebase Console
+// на вкладке вашего Android-приложения.
+const googleServicesPath = path.resolve(__dirname, 'google-services.json');
+const hasGoogleServices = fs.existsSync(googleServicesPath);
+if (!hasGoogleServices) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '\n[QuestLocator] ⚠️  google-services.json не найден в корне проекта.\n' +
+      'Скачайте его из Firebase Console → Project settings → Your apps → Android.\n' +
+      'Положите файл в: ' + googleServicesPath + '\n',
+  );
+}
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -15,11 +44,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: '#ffffff',
   },
   scheme: 'questlocator',
+
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.questlocator.app',
     config: {
-      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+      googleMapsApiKey: mapsKey,
     },
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
@@ -28,19 +58,24 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         'Фоновая геолокация нужна, чтобы таймер квеста продолжал работать, пока приложение свёрнуто.',
       NSCameraUsageDescription:
         'Камера нужна для сканирования QR-кода заведения и фото-бонусов.',
+      NSPhotoLibraryUsageDescription:
+        'Доступ к галерее нужен, чтобы выбрать фото профиля.',
       UIBackgroundModes: ['location', 'fetch', 'remote-notification'],
     },
   },
+
   android: {
     package: 'com.questlocator.app',
-    googleServicesFile: './google-services.json',
+    // Поле добавляется только если файл реально существует,
+    // иначе prebuild упадёт ещё до генерации APK.
+    ...(hasGoogleServices ? { googleServicesFile: './google-services.json' } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff',
     },
     config: {
       googleMaps: {
-        apiKey: process.env.GOOGLE_MAPS_API_KEY,
+        apiKey: mapsKey,
       },
     },
     permissions: [
@@ -51,6 +86,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'POST_NOTIFICATIONS',
     ],
   },
+
   plugins: [
     [
       'react-native-vision-camera',
@@ -67,13 +103,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   ],
+
   extra: {
+    // ─────────── Firebase (клиентские ключи, публичные) ───────────
     FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
     FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN,
     FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
     FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET,
     FIREBASE_MESSAGING_SENDER_ID: process.env.FIREBASE_MESSAGING_SENDER_ID,
     FIREBASE_APP_ID: process.env.FIREBASE_APP_ID,
-    GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
+
+    // ─────────── Google Maps ───────────
+    GOOGLE_MAPS_API_KEY: mapsKey,
   },
 });
