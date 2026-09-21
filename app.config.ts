@@ -88,6 +88,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   plugins: [
+    // ВАЖНО: react-native-vision-camera v4 требует minSdkVersion >= 26
+    // (CameraX/Kotlin coroutines). Без этого override при сборке падает
+    // с ошибкой "Manifest merger failed: uses-sdk:minSdkVersion 23 cannot
+    // be smaller than version 26 declared in library
+    // [:react-native-vision-camera]" — сборка APK останавливается ещё до
+    // генерации файла. По умолчанию Expo SDK 51 ставит minSdkVersion=23,
+    // поэтому его нужно поднять явно через expo-build-properties.
+    [
+      'expo-build-properties',
+      {
+        android: {
+          minSdkVersion: 26,
+        },
+      },
+    ],
     [
       'react-native-vision-camera',
       {

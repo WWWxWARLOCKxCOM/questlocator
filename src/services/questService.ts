@@ -2,10 +2,17 @@ import {
   collection, doc, onSnapshot, query, where, orderBy, limit,
   addDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { db, auth } from '@/config/firebase';
 import { Quest } from '@/types';
 
 const COL = 'quests';
+
+/** Гарантирует свежий ID-токен с custom claim admin=true у Firestore SDK. */
+async function ensureAdminToken(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Не авторизован');
+  await user.getIdToken(true);
+}
 
 function fromDoc(id: string, d: any): Quest {
   return {
@@ -43,6 +50,8 @@ export function subscribeToAllQuests(cb: (quests: Quest[]) => void) {
 }
 
 export async function createQuest(input: Omit<Quest, 'id' | 'createdAt'>) {
+  await ensureAdminToken(); // ← фикс прав доступа
+
   const ref = await addDoc(collection(db, COL), {
     ...input,
     promocode: input.promocode ?? null,
@@ -52,9 +61,11 @@ export async function createQuest(input: Omit<Quest, 'id' | 'createdAt'>) {
 }
 
 export async function updateQuest(id: string, patch: Partial<Quest>) {
+  await ensureAdminToken(); // ← фикс прав доступа
   await updateDoc(doc(db, COL, id), patch as any);
 }
 
 export async function deleteQuest(id: string) {
+  await ensureAdminToken(); // ← фикс прав доступа
   await deleteDoc(doc(db, COL, id));
 }

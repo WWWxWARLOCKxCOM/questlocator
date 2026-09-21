@@ -5,6 +5,11 @@
  * через addDoc, после чего вызывается Cloud Function generatePlaceQr,
  * которая генерирует QR-код в формате quest://place/{placeId} и сохраняет
  * его в поле qrCode этого же документа.
+ *
+ * ВАЖНО: перед любой записью вызывается ensureAdminToken() — она
+ * принудительно пересоздаёт ID-токен Firebase. Без этого Firestore SDK
+ * может использовать закэшированный токен без custom claim admin=true,
+ * и запись падает с "Missing or insufficient permissions".
  */
 import {
   collection,
@@ -19,10 +24,17 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '@/config/firebase';
+import { db, functions, auth } from '@/config/firebase';
 import { Place } from '@/types';
 
 const COL = 'places';
+
+/** Гарантирует свежий ID-токен с custom claim admin=true у Firestore SDK. */
+async function ensureAdminToken(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Не авторизован');
+  await user.getIdToken(true);
+}
 
 function fromDoc(id: string, d: any): Place {
   return {
@@ -39,10 +51,6 @@ function fromDoc(id: string, d: any): Place {
   };
 }
 
-/**
- * Общая функция подписки. Если filterActiveOnly = true, отдаём только
- * активные заведения (для карты клиента). Иначе — все (для админ-панели).
- */
 function subscribeToPlaces(
   filterActiveOnly: boolean,
   callback: (places: Place[]) => void,
@@ -68,23 +76,19 @@ function subscribeToPlaces(
   );
 }
 
-/** Подписка на все активные заведения (для карты клиента). */
 export function subscribeToActivePlaces(callback: (places: Place[]) => void) {
   return subscribeToPlaces(true, callback);
 }
 
-/** Подписка на все заведения (для админ-панели, включая неактивные). */
 export function subscribeToAllPlaces(callback: (places: Place[]) => void) {
   return subscribeToPlaces(false, callback);
 }
 
-/**
- * Создаёт документ заведения. qrCode заполняется серверной функцией
- * generatePlaceQr сразу после создания — клиенту не нужно его передавать.
- */
 export async function createPlace(
   input: Omit<Place, 'id' | 'qrCode' | 'createdAt'>,
 ): Promise<string> {
+  await ensureAdminToken(); // ← фикс прав доступа
+
   const ref = await addDoc(collection(db, COL), {
     name: input.name,
     address: input.address,
@@ -97,8 +101,8 @@ export async function createPlace(
     createdAt: serverTimestamp(),
   });
 
-  // Генерируем QR на сервере (Cloud Function). Если что-то пойдёт не так —
-  // заведение уже создано, QR можно перегенерировать через админку.
+  // Генерируем QR на сервере. Если упадёт — заведение уже создано,
+  // QR можно перегенерировать через админку.
   try {
     const fn = httpsCallable<{ placeId: string }, { ok: boolean; value: string }>(
       functions,
@@ -114,6 +118,8 @@ export async function createPlace(
 }
 
 export async function updatePlace(id: string, patch: Partial<Place>): Promise<void> {
+  await ensureAdminToken(); // ← фикс прав доступа
+
   const payload: Record<string, unknown> = {};
   if (patch.name !== undefined) payload.name = patch.name;
   if (patch.address !== undefined) payload.address = patch.address;
@@ -127,5 +133,6 @@ export async function updatePlace(id: string, patch: Partial<Place>): Promise<vo
 }
 
 export async function deletePlace(id: string): Promise<void> {
+  await ensureAdminToken(); // ← фикс прав доступа
   await deleteDoc(doc(db, COL, id));
 }
