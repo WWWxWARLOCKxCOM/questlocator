@@ -13,15 +13,16 @@ import {
   onSnapshot,
   query,
   where,
-  doc,
-  updateDoc,
 } from 'firebase/firestore';
 import { ref as storageRef, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/config/firebase';
+import { moderatePhoto } from '@/services/venueService';
 
 interface ModerationPhoto {
   id: string;
   sessionId: string;
+  placeId?: string;
+  placeOwnerUid?: string | null;
   userId: string;
   imagePath: string;
   exifLatitude?: number;
@@ -33,12 +34,18 @@ interface ModerationPhoto {
 }
 
 /**
- * Фото, не прошедшие автоматическую проверку, попадают сюда со статусом 'pending'.
- * Бакет Storage приватный (см. storage.rules), поэтому для показа используется
- * временная download-URL через getDownloadURL.
+ * Фото, попавшие на модерацию (status === 'pending'). Их видят:
+ *  • администратор — все фото;
+ *  • владелец заведения — только фото со своего заведения
+ *    (см. VenueModerationScreen).
  *
- * Начисление бонуса за одобренное фото выполняет триггер onPhotoStatusChange
- * (Cloud Functions), который выставляет sessions.photoBonusApplied = true.
+ * Модерация выполняется через Cloud Function moderatePhoto: она проверяет,
+ * что вызывающий — либо админ, либо владелец заведения, к которому
+ * привязано фото. Прямой updateDoc из клиента запрещён правилами Firestore.
+ *
+ * При одобрении/отклонении серверный триггер onPhotoStatusChange:
+ *  • если approved — начисляет бонус пользователю;
+ *  • удаляет файл из Storage и документ photos/{photoId}.
  */
 export default function PhotoModerationScreen() {
   const [photos, setPhotos] = useState<ModerationPhoto[]>([]);
@@ -52,15 +59,19 @@ export default function PhotoModerationScreen() {
           const data = d.data();
           let url = '';
           try {
-            url = await getDownloadURL(storageRef(storage, data.imagePath));
+            if (data.imagePath) {
+              url = await getDownloadURL(storageRef(storage, data.imagePath));
+            }
           } catch {
-            // Файл мог быть удалён — оставляем пустой URL, картинка не покажется
+            // Файл мог быть удалён — картинка не покажется
           }
           return {
             id: d.id,
             sessionId: data.sessionId,
+            placeId: data.placeId,
+            placeOwnerUid: data.placeOwnerUid ?? null,
             userId: data.userId,
-            imagePath: data.imagePath,
+            imagePath: data.imagePath ?? '',
             exifLatitude: data.exifLatitude,
             exifLongitude: data.exifLongitude,
             status: data.status,
@@ -78,10 +89,10 @@ export default function PhotoModerationScreen() {
 
   const decide = async (photo: ModerationPhoto, approve: boolean) => {
     try {
-      await updateDoc(doc(db, 'photos', photo.id), {
-        status: approve ? 'approved' : 'rejected',
-      });
-      // Серверный триггер onPhotoStatusChange при approve=true начислит бонус
+      await moderatePhoto(photo.id, approve);
+      // Серверный триггер onPhotoStatusChange:
+      //  • начислит бонус при approve,
+      //  • удалит файл и документ photos/{photoId}.
     } catch (e: any) {
       Alert.alert('Ошибка', e?.message ?? 'Не удалось обновить статус.');
     }

@@ -1,27 +1,74 @@
-import React, { useEffect } from 'react';
+import 'react-native-gesture-handler';
+import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Notifications from 'expo-notifications';
-import { AuthProvider } from '@/context/AuthContext';
-import RootNavigator from '@/navigation/RootNavigator';
+import { PortalProvider } from '@gorhom/portal';
+import { ThemeProvider } from './src/context/ThemeContext';
+import { AuthProvider } from './src/context/AuthContext';
+import RootNavigator from './src/navigation/RootNavigator';
+import PermissionsScreen from './src/screens/PermissionsScreen';
+import ThemeSelectionScreen from './src/screens/ThemeSelectionScreen';
+import LoadingScreen from './src/screens/LoadingScreen';
+import {
+  hasAskedPermissions,
+  markPermissionsAsked,
+  hasChosenTheme,
+  markThemeChosen,
+} from './src/services/permissionsService';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+function AppGate() {
+  const [checking, setChecking] = useState(true);
+  const [permissionsDone, setPermissionsDone] = useState(false);
+  const [themeDone, setThemeDone] = useState(false);
 
-export default function App() {
   useEffect(() => {
-    Notifications.requestPermissionsAsync();
+    (async () => {
+      try {
+        const [p, t] = await Promise.all([hasAskedPermissions(), hasChosenTheme()]);
+        setPermissionsDone(p);
+        setThemeDone(t);
+      } finally {
+        setChecking(false);
+      }
+    })();
   }, []);
 
+  if (checking) return <LoadingScreen />;
+
+  if (!permissionsDone) {
+    return (
+      <PermissionsScreen
+        onDone={async () => {
+          await markPermissionsAsked();
+          setPermissionsDone(true);
+        }}
+      />
+    );
+  }
+
+  if (!themeDone) {
+    return (
+      <ThemeSelectionScreen
+        onDone={async () => {
+          await markThemeChosen();
+          setThemeDone(true);
+        }}
+      />
+    );
+  }
+
+  return <RootNavigator />;
+}
+
+export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
+      <PortalProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AppGate />
+          </AuthProvider>
+        </ThemeProvider>
+      </PortalProvider>
     </GestureHandlerRootView>
   );
 }

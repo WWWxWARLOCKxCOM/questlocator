@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, TextInput, Modal, Switch } from 'react-native';
-import { subscribeToAllPlaces, createPlace, updatePlace, deletePlace } from '@/services/placesService';
-import { Place, PlaceCategory } from '@/types';
+import {
+  View, Text, FlatList, StyleSheet, Pressable, TextInput,
+  Modal, Switch, Alert,
+} from 'react-native';
+import {
+  subscribeToAllPlaces, createPlace, updatePlace, deletePlace,
+} from '@/services/placesService';
 import { getCurrentPosition } from '@/services/locationService';
-
-const CATEGORIES: PlaceCategory[] = ['restaurant', 'cafe', 'museum', 'shop'];
+import {
+  Place, PlaceCategory, CATEGORY_LABELS, ALL_CATEGORIES,
+} from '@/types';
 
 export default function PlacesManagementScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
@@ -39,8 +44,6 @@ export default function PlacesManagementScreen() {
     if (editing) {
       await updatePlace(editing.id, { name, address, category, isActive });
     } else {
-      // Для MVP координаты берутся из текущей позиции админа на месте создания заведения;
-      // в полноценной версии стоит добавить выбор точки на карте.
       const location = await getCurrentPosition();
       await createPlace({
         name,
@@ -49,9 +52,31 @@ export default function PlacesManagementScreen() {
         isActive,
         latitude: location.latitude,
         longitude: location.longitude,
+        radiusMeters: 50,
       });
     }
     setIsModalOpen(false);
+  };
+
+  const handleDelete = (place: Place) => {
+    Alert.alert(
+      'Удалить точку?',
+      `«${place.name}» и её квест будут удалены.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePlace(place.id);
+            } catch (e: any) {
+              Alert.alert('Ошибка', e?.message ?? 'Не удалось удалить');
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -68,11 +93,12 @@ export default function PlacesManagementScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.address}>{item.address}</Text>
+              <Text style={styles.category}>{CATEGORY_LABELS[item.category]}</Text>
             </View>
             <Text style={item.isActive ? styles.active : styles.inactive}>
               {item.isActive ? 'Активно' : 'Отключено'}
             </Text>
-            <Pressable onPress={() => deletePlace(item.id)}>
+            <Pressable onPress={() => handleDelete(item)}>
               <Text style={styles.delete}>Удалить</Text>
             </Pressable>
           </Pressable>
@@ -85,14 +111,17 @@ export default function PlacesManagementScreen() {
           <TextInput style={styles.input} placeholder="Название" value={name} onChangeText={setName} />
           <TextInput style={styles.input} placeholder="Адрес" value={address} onChangeText={setAddress} />
 
+          <Text style={styles.modalLabel}>Категория</Text>
           <View style={styles.categoryRow}>
-            {CATEGORIES.map((c) => (
+            {ALL_CATEGORIES.map((c) => (
               <Pressable
                 key={c}
                 style={[styles.categoryChip, category === c && styles.categoryChipActive]}
                 onPress={() => setCategory(c)}
               >
-                <Text style={category === c ? styles.categoryTextActive : styles.categoryText}>{c}</Text>
+                <Text style={category === c ? styles.categoryTextActive : styles.categoryText}>
+                  {CATEGORY_LABELS[c]}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -116,31 +145,39 @@ export default function PlacesManagementScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  addButton: { backgroundColor: '#2ecc71', borderRadius: 8, padding: 12, alignItems: 'center', marginBottom: 12 },
+  addButton: {
+    backgroundColor: '#2ecc71', borderRadius: 8, padding: 12,
+    alignItems: 'center', marginBottom: 12,
+  },
   addButtonText: { color: '#fff', fontWeight: '700' },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ddd', gap: 8,
   },
   name: { fontWeight: '600' },
   address: { color: '#666', fontSize: 12 },
+  category: { color: '#2ecc71', fontSize: 12, fontWeight: '600', marginTop: 2 },
   active: { color: '#27ae60' },
   inactive: { color: '#c0392b' },
   delete: { color: '#c0392b' },
   modal: { flex: 1, padding: 24, gap: 12, marginTop: 40 },
   modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
+  modalLabel: { color: '#666', fontSize: 12, marginTop: 4 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 },
   categoryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  categoryChip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, backgroundColor: '#eee' },
+  categoryChip: {
+    paddingVertical: 6, paddingHorizontal: 12,
+    borderRadius: 16, backgroundColor: '#eee',
+  },
   categoryChipActive: { backgroundColor: '#2ecc71' },
   categoryText: { color: '#333' },
   categoryTextActive: { color: '#fff', fontWeight: '700' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  saveButton: { backgroundColor: '#2ecc71', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 16 },
+  saveButton: {
+    backgroundColor: '#2ecc71', borderRadius: 8, padding: 14,
+    alignItems: 'center', marginTop: 16,
+  },
   saveButtonText: { color: '#fff', fontWeight: '700' },
   cancelButton: { alignItems: 'center', padding: 10 },
 });

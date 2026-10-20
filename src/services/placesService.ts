@@ -1,46 +1,25 @@
-/**
- * Работа с заведениями (коллекция places в Firestore).
- *
- * Подписки — через onSnapshot с real-time обновлениями. Создание заведения —
- * через addDoc, после чего вызывается Cloud Function generatePlaceQr,
- * которая генерирует QR-код в формате quest://place/{placeId} и сохраняет
- * его в поле qrCode этого же документа.
- *
- * ВАЖНО: перед любой записью вызывается ensureAdminToken() — она
- * принудительно пересоздаёт ID-токен Firebase. Без этого Firestore SDK
- * может использовать закэшированный токен без custom claim admin=true,
- * и запись падает с "Missing or insufficient permissions".
- */
 import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
+  collection, doc, onSnapshot, query, where, orderBy,
 } from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions, auth } from '@/config/firebase';
-import { Place } from '@/types';
+import { db, functions, storage } from '@/config/firebase';
+import { Place, PlaceCategory } from '@/types';
 
 const COL = 'places';
-
-/** Гарантирует свежий ID-токен с custom claim admin=true у Firestore SDK. */
-async function ensureAdminToken(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Не авторизован');
-  await user.getIdToken(true);
-}
 
 function fromDoc(id: string, d: any): Place {
   return {
     id,
+    ownerUid: d.ownerUid ?? undefined,
     name: d.name ?? '',
     address: d.address ?? '',
+    description: d.description ?? '',
+    photoUrl: d.photoUrl ?? undefined,
+    website: d.website ?? undefined,
+    phone: d.phone ?? undefined,
+    averageCheck: typeof d.averageCheck === 'number' ? d.averageCheck : undefined,
+    menuPdfUrl: d.menuPdfUrl ?? undefined,
     latitude: d.latitude ?? 0,
     longitude: d.longitude ?? 0,
     category: d.category ?? 'cafe',
@@ -51,88 +30,140 @@ function fromDoc(id: string, d: any): Place {
   };
 }
 
-function subscribeToPlaces(
-  filterActiveOnly: boolean,
-  callback: (places: Place[]) => void,
-) {
+function subscribeToPlaces(filterActiveOnly: boolean, cb: (places: Place[]) => void) {
   const q = filterActiveOnly
-    ? query(
-        collection(db, COL),
-        where('isActive', '==', true),
-        orderBy('name'),
-      )
+    ? query(collection(db, COL), where('isActive', '==', true), orderBy('name'))
     : query(collection(db, COL), orderBy('name'));
-
   return onSnapshot(
     q,
-    (snap) => {
-      callback(snap.docs.map((d) => fromDoc(d.id, d.data())));
-    },
+    (snap) => cb(snap.docs.map((d) => fromDoc(d.id, d.data()))),
     (error) => {
       // eslint-disable-next-line no-console
       console.warn('[placesService] onSnapshot error:', error.message);
-      callback([]);
+      cb([]);
     },
   );
 }
 
-export function subscribeToActivePlaces(callback: (places: Place[]) => void) {
-  return subscribeToPlaces(true, callback);
+export function subscribeToActivePlaces(cb: (places: Place[]) => void) {
+  return subscribeToPlaces(true, cb);
 }
 
-export function subscribeToAllPlaces(callback: (places: Place[]) => void) {
-  return subscribeToPlaces(false, callback);
+export function subscribeToAllPlaces(cb: (places: Place[]) => void) {
+  return subscribeToPlaces(false, cb);
 }
 
-export async function createPlace(
-  input: Omit<Place, 'id' | 'qrCode' | 'createdAt'>,
-): Promise<string> {
-  await ensureAdminToken(); // ← фикс прав доступа
+/** Подписка на точки конкретного заведения. */
+export function subscribeToPlacesByOwner(
+  ownerUid: string,
+  cb: (places: Place[]) => void,
+) {
+  const q = query(
+    collection(db, COL),
+    where('ownerUid', '==', ownerUid),
+    orderBy('createdAt', 'desc'),
+  );
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => fromDoc(d.id, d.data()))),
+    (error) => {
+      // eslint-disable-next-line no-console
+      console.warn('[placesService] byOwner error:', error.message);
+      cb([]);
+    },
+  );
+}
 
-  const ref = await addDoc(collection(db, COL), {
+async function uploadPlacePhoto(placeId: string, uri: string): Promise<string> {
+  const blob = await (await fetch(uri)).blob();
+  const path = `places-photos/${placeId}/main.jpg`;
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+  return await getDownloadURL(fileRef);
+}
+
+interface CreatePlaceInput {
+  name: string;
+  address: string;
+  description?: string;
+  photoUri?: string;
+  website?: string;
+  phone?: string;
+  averageCheck?: number;
+  menuPdfUrl?: string;
+  latitude: number;
+  longitude: number;
+  category: PlaceCategory;
+  isActive: boolean;
+  radiusMeters: number;
+  ownerUid?: string | null; // только для админа
+}
+
+export async function createPlace(input: CreatePlaceInput): Promise<string> {
+  const fn = httpsCallable<
+    {
+      name: string; address: string; description?: string;
+      website?: string; phone?: string; averageCheck?: number; menuPdfUrl?: string;
+      latitude: number; longitude: number; category: string;
+      radiusMeters: number; isActive: boolean;
+      ownerUid?: string | null;
+    },
+    { ok: boolean; placeId: string; qrCode: string }
+  >(functions, 'createPlace');
+
+  const res = await fn({
     name: input.name,
     address: input.address,
+    description: input.description,
+    website: input.website ?? '',
+    phone: input.phone ?? '',
+    averageCheck: typeof input.averageCheck === 'number' ? input.averageCheck : undefined,
+    menuPdfUrl: input.menuPdfUrl ?? '',
     latitude: input.latitude,
     longitude: input.longitude,
     category: input.category,
-    isActive: input.isActive,
     radiusMeters: input.radiusMeters,
-    qrCode: '',
-    createdAt: serverTimestamp(),
+    isActive: input.isActive,
+    ownerUid: input.ownerUid ?? null,
   });
 
-  // Генерируем QR на сервере. Если упадёт — заведение уже создано,
-  // QR можно перегенерировать через админку.
-  try {
-    const fn = httpsCallable<{ placeId: string }, { ok: boolean; value: string }>(
-      functions,
-      'generatePlaceQr',
-    );
-    await fn({ placeId: ref.id });
-  } catch (e: any) {
-    // eslint-disable-next-line no-console
-    console.warn('[placesService] generatePlaceQr failed:', e?.message);
+  const placeId = res.data.placeId;
+
+  // Загружаем фото и обновляем документ
+  if (input.photoUri) {
+    try {
+      const url = await uploadPlacePhoto(placeId, input.photoUri);
+      const fn2 = httpsCallable(functions, 'updatePlacePhoto');
+      await fn2({ placeId, photoUrl: url });
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn('[placesService] photo upload failed:', e?.message);
+    }
   }
 
-  return ref.id;
+  return placeId;
 }
 
+/** Владелец / админ: обновить простое поле точки. */
 export async function updatePlace(id: string, patch: Partial<Place>): Promise<void> {
-  await ensureAdminToken(); // ← фикс прав доступа
-
-  const payload: Record<string, unknown> = {};
-  if (patch.name !== undefined) payload.name = patch.name;
-  if (patch.address !== undefined) payload.address = patch.address;
-  if (patch.latitude !== undefined) payload.latitude = patch.latitude;
-  if (patch.longitude !== undefined) payload.longitude = patch.longitude;
-  if (patch.category !== undefined) payload.category = patch.category;
-  if (patch.isActive !== undefined) payload.isActive = patch.isActive;
-  if (patch.radiusMeters !== undefined) payload.radiusMeters = patch.radiusMeters;
-
-  await updateDoc(doc(db, COL, id), payload);
+  const fn = httpsCallable<{ placeId: string; patch: Record<string, unknown> }, { ok: boolean }>(
+    functions,
+    'updatePlace',
+  );
+  await fn({ placeId: id, patch });
 }
 
+/** Удалить точку — только админ. */
 export async function deletePlace(id: string): Promise<void> {
-  await ensureAdminToken(); // ← фикс прав доступа
-  await deleteDoc(doc(db, COL, id));
+  const fn = httpsCallable<{ placeId: string }, { ok: boolean }>(functions, 'deletePlace');
+  await fn({ placeId: id });
+}
+
+/** Админ: подвязать существующую точку к аккаунту заведения. */
+export async function assignPlaceOwner(placeId: string, ownerUid: string | null) {
+  const fn = httpsCallable<
+    { placeId: string; ownerUid: string | null },
+    { ok: boolean }
+  >(functions, 'assignPlaceOwner');
+  return (await fn({ placeId, ownerUid })).data;
 }

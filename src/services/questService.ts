@@ -1,18 +1,11 @@
 import {
   collection, doc, onSnapshot, query, where, orderBy, limit,
-  addDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db, auth } from '@/config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/config/firebase';
 import { Quest } from '@/types';
 
 const COL = 'quests';
-
-/** Гарантирует свежий ID-токен с custom claim admin=true у Firestore SDK. */
-async function ensureAdminToken(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Не авторизован');
-  await user.getIdToken(true);
-}
 
 function fromDoc(id: string, d: any): Quest {
   return {
@@ -25,6 +18,7 @@ function fromDoc(id: string, d: any): Quest {
     photoBonusMultiplier: d.photoBonusMultiplier ?? 1,
     photoRequired: d.photoRequired ?? false,
     referenceImages: d.referenceImages ?? [],
+    tasks: Array.isArray(d.tasks) ? d.tasks : [],
     isActive: d.isActive,
     createdAt: d.createdAt?.toMillis?.() ?? 0,
   };
@@ -49,23 +43,44 @@ export function subscribeToAllQuests(cb: (quests: Quest[]) => void) {
   });
 }
 
-export async function createQuest(input: Omit<Quest, 'id' | 'createdAt'>) {
-  await ensureAdminToken(); // ← фикс прав доступа
-
-  const ref = await addDoc(collection(db, COL), {
-    ...input,
-    promocode: input.promocode ?? null,
-    createdAt: serverTimestamp(),
+/** Подписка на квесты конкретной точки (для владельца заведения). */
+export function subscribeToQuestsByPlace(
+  placeId: string,
+  cb: (quests: Quest[]) => void,
+) {
+  const q = query(
+    collection(db, COL),
+    where('placeId', '==', placeId),
+    orderBy('createdAt', 'desc'),
+  );
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map((d) => fromDoc(d.id, d.data())));
   });
-  return ref.id;
 }
 
+/** Создать квест (админ или владелец точки) — через Cloud Function. */
+export async function createQuest(input: Omit<Quest, 'id' | 'createdAt'>) {
+  const fn = httpsCallable<
+    typeof input,
+    { ok: boolean; questId: string }
+  >(functions, 'createQuest');
+  const res = await fn(input);
+  return res.data.questId;
+}
+
+/** Обновить квест (админ или владелец точки). */
 export async function updateQuest(id: string, patch: Partial<Quest>) {
-  await ensureAdminToken(); // ← фикс прав доступа
-  await updateDoc(doc(db, COL, id), patch as any);
+  const fn = httpsCallable<
+    { questId: string; patch: Record<string, unknown> },
+    { ok: boolean }
+  >(functions, 'updateQuest');
+  await fn({ questId: id, patch });
 }
 
+/** Удалить квест (админ или владелец точки). */
 export async function deleteQuest(id: string) {
-  await ensureAdminToken(); // ← фикс прав доступа
-  await deleteDoc(doc(db, COL, id));
+  const fn = httpsCallable<{ questId: string }, { ok: boolean }>(
+    functions, 'deleteQuest',
+  );
+  await fn({ questId: id });
 }

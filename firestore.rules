@@ -4,13 +4,31 @@ service cloud.firestore {
 
     function isAuth() { return request.auth != null; }
     function isAdmin() { return request.auth.token.admin == true; }
+    function isVenue() { return request.auth.token.venue == true; }
     function isOwner(uid) { return isAuth() && request.auth.uid == uid; }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow read: if isAuth();
+      allow create: if isOwner(userId) && request.resource.data.balance == 0;
+      allow update: if (
+        isAdmin() ||
+        (
+          isOwner(userId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['balance', 'email', 'uid', 'createdAt', 'isAdmin', 'isVenue'])
+        )
+      );
       allow delete: if isAdmin();
+
+      match /friends/{friendId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if false;
+      }
+    }
+
+    match /venues/{venueUid} {
+      allow read: if isAdmin() || isOwner(venueUid);
+      allow write: if isAdmin();
     }
 
     match /places/{placeId} {
@@ -24,14 +42,66 @@ service cloud.firestore {
     }
 
     match /sessions/{sessionId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      // запись только через Cloud Functions (Admin SDK обходит правила)
+      allow read: if isAuth() && (
+        isOwner(resource.data.userId)
+        || isAdmin()
+        || (
+          resource.data.status in ['in_progress', 'paused']
+          && resource.data.hideOnMap != true
+        )
+      );
       allow write: if false;
     }
 
     match /photos/{photoId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin();
+      allow read: if isOwner(resource.data.userId)
+                  || isAdmin()
+                  || (isVenue() && resource.data.placeOwnerUid == request.auth.uid);
+      allow update: if
+        (isAdmin() || (isVenue() && resource.data.placeOwnerUid == request.auth.uid))
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status']);
+      allow write: if false;
+    }
+
+    match /task_completions/{docId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /task_submissions/{docId} {
+      allow read: if isAuth()
+                  && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    match /user_levels/{docId} {
+      allow read: if isAuth()
+                  && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    match /balance_adjustments/{adjId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ─── КУПОНЫ ───
+    // Список купонов виден всем авторизованным (клиентский магазин).
+    // Создание / изменение — только через Cloud Functions (Admin SDK).
+    match /coupons/{couponId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // ─── КУПЛЕННЫЕ КУПОНЫ ───
+    // Пользователь видит только свои. Запись — через Cloud Function buyCoupon.
+    match /user_coupons/{userCouponId} {
+      allow read: if isAuth()
+                  && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if false;
     }
   }

@@ -1,33 +1,46 @@
 /**
  * Обёртка над expo-location.
- * Для MVP фоновая геозона упрощена до периодического опроса позиции
- * (работает, пока приложение открыто).
+ * Отвечает за:
+ *  - получение текущей позиции (для проверки при сканировании QR);
+ *  - отслеживание нахождения внутри зоны заведения (геозона 30 сек);
+ *  - защиту от mock location.
  */
 import * as Location from 'expo-location';
 import { GeoPoint } from '@/types';
 import { distanceInMeters } from '@/utils/distance';
 
-const RADIUS_M = 50;
+const DEFAULT_RADIUS_M = 50;
 
 export async function getCurrentPosition(): Promise<GeoPoint> {
   const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') {
-    throw new Error('Доступ к геолокации отклонён');
-  }
+  if (status !== 'granted') throw new Error('Доступ к геолокации отклонён');
+
   const loc = await Location.getCurrentPositionAsync({
     accuracy: Location.Accuracy.High,
   });
+
+  if ((loc as any).mocked === true) {
+    throw new Error('Обнаружена эмуляция GPS. Отключите fake-GPS приложение.');
+  }
+
   return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
 }
 
-export async function startSessionTracking(params: {
+interface TrackingParams {
   sessionId: string;
   center: GeoPoint;
   radiusMeters?: number;
   onEnter: () => void;
   onExit: () => void;
-}): Promise<() => void> {
-  const radius = params.radiusMeters ?? RADIUS_M;
+}
+
+/**
+ * Периодически проверяет, находится ли пользователь внутри зоны заведения.
+ * Работает, пока приложение открыто (для фонового трекинга нужна платная
+ * лицензия Transistorsoft — не используется в MVP).
+ */
+export async function startSessionTracking(params: TrackingParams): Promise<() => void> {
+  const radius = params.radiusMeters ?? DEFAULT_RADIUS_M;
   let inside = true;
 
   const id = setInterval(async () => {
@@ -48,7 +61,7 @@ export async function startSessionTracking(params: {
         params.onExit();
       }
     } catch {
-      // игнорируем временные сбои GPS
+      // временные сбои GPS — игнорируем
     }
   }, 30_000);
 
