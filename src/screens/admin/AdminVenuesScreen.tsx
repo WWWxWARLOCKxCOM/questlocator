@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, SectionList, StyleSheet, TouchableOpacity,
+  View, Text, SectionList, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import { AdminStackParamList } from '@/navigation/AdminNavigator';
-import { subscribeToAllVenues } from '@/services/venueService';
+import { subscribeToAllVenues, updateGlobalSettings } from '@/services/venueService';
 import { subscribeToAllPlaces } from '@/services/placesService';
 import { Place, PlaceCategory, VenueAccount } from '@/types';
 
@@ -24,9 +26,35 @@ export default function AdminVenuesScreen() {
   const navigation = useNavigation<Nav>();
   const [venues, setVenues] = useState<VenueAccount[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
+  
+  // Глобальные настройки
+  const [pointsPerQuest, setPointsPerQuest] = useState('10');
+  const [monthlyCost, setMonthlyCost] = useState('100');
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => subscribeToAllVenues(setVenues), []);
   useEffect(() => subscribeToAllPlaces(setPlaces), []);
+  
+  useEffect(() => {
+    return onSnapshot(doc(db, 'settings', 'general'), (snap) => {
+      if (snap.exists()) {
+        setPointsPerQuest(String(snap.data().pointsPerQuest ?? 10));
+        setMonthlyCost(String(snap.data().monthlyCostPerPlace ?? 100));
+      }
+    });
+  }, []);
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await updateGlobalSettings(Number(pointsPerQuest) || 0, Number(monthlyCost) || 0);
+      Alert.alert('Успех', 'Глобальные настройки сохранены');
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const adminPlaces = useMemo(() => places.filter((p) => !p.ownerUid), [places]);
 
@@ -56,7 +84,7 @@ export default function AdminVenuesScreen() {
         <Text style={styles.name}>{item.companyName}</Text>
         <Text style={styles.meta}>{item.contactEmail}</Text>
         <Text style={styles.meta}>
-          Точек: {item.pointsUsed} / {item.pointsLimit}
+          Точек: {item.pointsUsed} / {item.pointsLimit} · Купонов: {item.couponsUsed || 0} / {item.couponsLimit || 0}
         </Text>
       </View>
       <MaterialCommunityIcons name="chevron-right" size={22} color="#999" />
@@ -90,6 +118,38 @@ export default function AdminVenuesScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ГЛОБАЛЬНЫЕ НАСТРОЙКИ */}
+      <View style={styles.settingsCard}>
+        <Text style={styles.settingsTitle}>Глобальные настройки</Text>
+        <View style={styles.settingsRow}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Баллов за квест:</Text>
+            <TextInput 
+              style={styles.input} 
+              keyboardType="numeric" 
+              value={pointsPerQuest} 
+              onChangeText={setPointsPerQuest} 
+            />
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Списание за точку (мес):</Text>
+            <TextInput 
+              style={styles.input} 
+              keyboardType="numeric" 
+              value={monthlyCost} 
+              onChangeText={setMonthlyCost} 
+            />
+          </View>
+        </View>
+        <TouchableOpacity 
+          style={[styles.saveSettingsBtn, savingSettings && { opacity: 0.6 }]} 
+          onPress={handleSaveSettings}
+          disabled={savingSettings}
+        >
+          {savingSettings ? <ActivityIndicator color="#fff" size="small"/> : <Text style={styles.saveSettingsText}>Сохранить настройки</Text>}
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={styles.addBtn}
         onPress={() => navigation.navigate('AdminCreateVenue')}
@@ -117,6 +177,14 @@ export default function AdminVenuesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 12 },
+  settingsCard: { backgroundColor: '#f0f0f0', borderRadius: 12, padding: 16, marginBottom: 16 },
+  settingsTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#333' },
+  settingsRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  inputGroup: { flex: 1 },
+  inputLabel: { fontSize: 12, color: '#666', marginBottom: 4 },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 15 },
+  saveSettingsBtn: { backgroundColor: '#3498db', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  saveSettingsText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   addBtn: {
     backgroundColor: '#2ecc71', borderRadius: 8, padding: 12,
     alignItems: 'center', marginBottom: 12,

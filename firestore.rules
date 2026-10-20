@@ -104,5 +104,12 @@ service cloud.firestore {
                   && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if false;
     }
+
+    // ─── НАСТРОЙКИ (НОВОЕ) ───
+    // Нужно для экрана финансов (чтобы показать реальные цифры)
+    match /settings/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
   }
 }

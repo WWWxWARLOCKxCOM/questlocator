@@ -59,6 +59,18 @@ export const verifyAdminCredentials = onCall(
   },
 );
 
+export const updateGlobalSettings = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
+  
+  const { pointsPerQuest, monthlyCostPerPlace } = req.data as any;
+  await db.collection('settings').doc('general').set({
+    pointsPerQuest: typeof pointsPerQuest === 'number' ? pointsPerQuest : 10,
+    monthlyCostPerPlace: typeof monthlyCostPerPlace === 'number' ? monthlyCostPerPlace : 100,
+  }, { merge: true });
+  return { ok: true };
+});
+
 // ═══════════════════════════════════════════
 //  СОЗДАНИЕ ТОЧКИ
 // ═══════════════════════════════════════════
@@ -97,7 +109,7 @@ export const createPlace = onCall(async (req) => {
       throw new HttpsError('permission-denied', 'Аккаунт заведения заблокирован');
     }
     const used = venue.pointsUsed ?? 0;
-    const limit = venue.pointsLimit ?? 1;
+    const limit = venue.pointsLimit ?? 2; // Базовый лимит 2
     if (used >= limit) {
       throw new HttpsError('failed-precondition', 'Лимит точек исчерпан');
     }
@@ -112,6 +124,10 @@ export const createPlace = onCall(async (req) => {
 
   const ref = db.collection('places').doc();
   const placeId = ref.id;
+
+  // Вычисляем дату следующего списания (ровно через 1 месяц)
+  const nextBillingDate = new Date();
+  nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
 
   await ref.set({
     ownerUid: finalOwnerUid,
@@ -131,6 +147,7 @@ export const createPlace = onCall(async (req) => {
     qrCode: '',
     levels: levels ?? null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    nextBillingDate: admin.firestore.Timestamp.fromDate(nextBillingDate), // <-- ДОБАВЛЕНО
   });
 
   if (finalOwnerUid) {
@@ -138,7 +155,7 @@ export const createPlace = onCall(async (req) => {
     const venueSnap = await venueRef.get();
     if (venueSnap.exists) {
       const used = venueSnap.data()!.pointsUsed ?? 0;
-      const limit = venueSnap.data()!.pointsLimit ?? 1;
+      const limit = venueSnap.data()!.pointsLimit ?? 2;
       if (isAdmin || used < limit) {
         await venueRef.update({
           pointsUsed: admin.firestore.FieldValue.increment(1),
@@ -182,13 +199,13 @@ export const generatePlaceQr = onCall(async (req) => {
 });
 
 // ═══════════════════════════════════════════
-//  УПРАВЛЕНИЕ ЗАВЕДЕНИЯМИ (только админ)
+//  УПРАВЛЕНИЕ ЗАВЕДЕНИЯМИ (админ)
 // ═══════════════════════════════════════════
 export const createVenueAccount = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
   if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
 
-  const { email, password, companyName, contactPhone, pointsLimit } = req.data as any;
+  const { email, password, companyName, contactPhone } = req.data as any;
 
   if (!email || !password || !companyName) {
     throw new HttpsError('invalid-argument', 'email, password, companyName обязательны');
@@ -214,10 +231,11 @@ export const createVenueAccount = onCall(async (req) => {
     companyName,
     contactEmail: email,
     contactPhone: contactPhone ?? '',
-    pointsLimit: typeof pointsLimit === 'number' ? pointsLimit : 1,
+    pointsLimit: 2,
     pointsUsed: 0,
-    couponsLimit: 1,
+    couponsLimit: 2,
     couponsUsed: 0,
+    balance: 0,
     isActive: true,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -225,29 +243,45 @@ export const createVenueAccount = onCall(async (req) => {
   return { ok: true, uid: userRecord.uid };
 });
 
-export const updateVenuePointsLimit = onCall(async (req) => {
+export const updateVenueLimits = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
   if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
 
-  const { venueUid, pointsLimit } = req.data as any;
-  if (!venueUid || typeof pointsLimit !== 'number' || pointsLimit < 0) {
-    throw new HttpsError('invalid-argument', 'venueUid и pointsLimit обязательны');
+  const { venueUid, pointsLimit, couponsLimit } = req.data as any;
+  const patch: any = {};
+  if (typeof pointsLimit === 'number' && pointsLimit >= 0) patch.pointsLimit = pointsLimit;
+  if (typeof couponsLimit === 'number' && couponsLimit >= 0) patch.couponsLimit = couponsLimit;
+
+  if (Object.keys(patch).length === 0) {
+    throw new HttpsError('invalid-argument', 'Не переданы валидные лимиты');
   }
 
-  await db.collection('venues').doc(venueUid).update({ pointsLimit });
+  await db.collection('venues').doc(venueUid).update(patch);
   return { ok: true };
 });
 
-export const updateVenueCouponsLimit = onCall(async (req) => {
+export const adjustVenueBalance = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
   if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
 
-  const { venueUid, couponsLimit } = req.data as any;
-  if (!venueUid || typeof couponsLimit !== 'number' || couponsLimit < 0) {
-    throw new HttpsError('invalid-argument', 'venueUid и couponsLimit обязательны');
+  const { venueUid, amount, description } = req.data as any;
+  if (!venueUid || typeof amount !== 'number') {
+    throw new HttpsError('invalid-argument', 'venueUid и amount обязательны');
   }
 
-  await db.collection('venues').doc(venueUid).update({ couponsLimit });
+  const venueRef = db.collection('venues').doc(venueUid);
+  await db.runTransaction(async (tx) => {
+    tx.update(venueRef, { balance: admin.firestore.FieldValue.increment(amount) });
+    const txRef = db.collection('venue_transactions').doc();
+    tx.set(txRef, {
+      venueUid,
+      type: 'admin_adjustment',
+      amount,
+      description: description || 'Корректировка администратором',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
   return { ok: true };
 });
 
@@ -268,6 +302,7 @@ export const deleteVenueAccount = onCall(async (req) => {
   const photoDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const levelDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const couponDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  const txDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const CHUNK = 10;
   
   for (let i = 0; i < placeIds.length; i += CHUNK) {
@@ -282,8 +317,12 @@ export const deleteVenueAccount = onCall(async (req) => {
     levelDocs.push(...lvSnap.docs);
   }
 
-  const cSnap = await db.collection('coupons').where('ownerUid', '==', venueUid).get();
+  const [cSnap, tSnap] = await Promise.all([
+    db.collection('coupons').where('ownerUid', '==', venueUid).get(),
+    db.collection('venue_transactions').where('venueUid', '==', venueUid).get()
+  ]);
   couponDocs.push(...cSnap.docs);
+  txDocs.push(...tSnap.docs);
 
   const allRefs: FirebaseFirestore.DocumentReference[] = [
     ...placesSnap.docs.map((d) => d.ref),
@@ -291,6 +330,7 @@ export const deleteVenueAccount = onCall(async (req) => {
     ...photoDocs.map((d) => d.ref),
     ...levelDocs.map((d) => d.ref),
     ...couponDocs.map((d) => d.ref),
+    ...txDocs.map((d) => d.ref),
     db.collection('venues').doc(venueUid),
   ];
 
@@ -304,9 +344,7 @@ export const deleteVenueAccount = onCall(async (req) => {
 
   try {
     for (const placeId of placeIds) {
-      await admin.storage().bucket().deleteFiles({
-        prefix: `places-photos/${placeId}/`,
-      });
+      await admin.storage().bucket().deleteFiles({ prefix: `places-photos/${placeId}/` });
     }
   } catch (e: any) {
     console.warn('[deleteVenueAccount] storage places cleanup:', e?.message);
@@ -316,9 +354,7 @@ export const deleteVenueAccount = onCall(async (req) => {
     for (const photoDoc of photoDocs) {
       const p = photoDoc.data();
       if (p.imagePath) {
-        try {
-          await admin.storage().bucket().file(p.imagePath).delete();
-        } catch {}
+        await admin.storage().bucket().file(p.imagePath).delete().catch(() => {});
       }
     }
   } catch (e: any) {
@@ -538,6 +574,38 @@ async function finalizeSession(sessionId: string, userId: string, forced: boolea
     if (newLevelData) {
       tx.set(levelRef, newLevelData, { merge: true });
     }
+
+    // ─── НАЧИСЛЕНИЕ БАЛЛОВ ЗАВЕДЕНИЮ ───
+    if (timeDone && place && place.ownerUid) {
+      const settingsRef = db.collection('settings').doc('general');
+      const settingsSnap = await tx.get(settingsRef);
+      const ptsPerQuest = settingsSnap.exists ? (settingsSnap.data()?.pointsPerQuest ?? 10) : 10;
+
+      if (ptsPerQuest > 0) {
+        const venueRef = db.collection('venues').doc(place.ownerUid);
+        tx.update(venueRef, { balance: admin.firestore.FieldValue.increment(ptsPerQuest) });
+        
+        const vtxRef = db.collection('venue_transactions').doc();
+        tx.set(vtxRef, {
+          venueUid: place.ownerUid,
+          type: 'quest_reward',
+          amount: ptsPerQuest,
+          description: `Награда за квест клиента (${s.userName || 'Клиент'})`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    // ─── УВЕДОМЛЕНИЕ ОБ ОКОНЧАНИИ КВЕСТА ───
+    const notifRef = db.collection('notifications').doc();
+    tx.set(notifRef, {
+      userId,
+      title: 'Квест пройден!',
+      body: `Вы получили ${points} баллов за прохождение квеста в заведении.`,
+      type: 'quest_reward',
+      isRead: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return { ok: true, pointsEarned: points, promocode: quest.promocode };
   });
@@ -1460,7 +1528,7 @@ export const createCoupon = onCall(async (req) => {
     if (!venueSnap.exists) throw new HttpsError('permission-denied', 'Заведение не найдено');
     const venue = venueSnap.data()!;
     const used = venue.couponsUsed ?? 0;
-    const limit = venue.couponsLimit ?? 1;
+    const limit = venue.couponsLimit ?? 2;
 
     if (used >= limit) {
       throw new HttpsError('failed-precondition', 'Лимит купонов исчерпан');
@@ -1646,6 +1714,17 @@ export const buyCoupon = onCall(async (req) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // УВЕДОМЛЕНИЕ О ПОКУПКЕ
+    const notifRef = db.collection('notifications').doc();
+    tx.set(notifRef, {
+      userId: req.auth!.uid,
+      title: 'Купон приобретен',
+      body: `Вы купили купон «${coupon.title}». Он появился в разделе "Промокоды и купоны".`,
+      type: 'coupon_buy',
+      isRead: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
     return {
       ok: true,
       userCouponId: userCouponRef.id,
@@ -1681,6 +1760,16 @@ export const redeemCoupon = onCall(async (req) => {
     usedAt: admin.firestore.FieldValue.serverTimestamp(),
     usedByUid: req.auth.uid,
     usedByName: venueName,
+  });
+
+  // УВЕДОМЛЕНИЕ О ПОГАШЕНИИ
+  await db.collection('notifications').add({
+    userId: uc.userId,
+    title: 'Купон погашен',
+    body: `Купон «${uc.title}» был успешно погашен в заведении «${venueName}».`,
+    type: 'coupon_redeem',
+    isRead: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
   return { ok: true };
@@ -1760,4 +1849,88 @@ export const cleanupExpiredCoupons = onSchedule(
 
     if (count > 0) await batch.commit();
   },
+);
+
+// ═══════════════════════════════════════════
+//  ИНДИВИДУАЛЬНЫЕ ЕЖЕМЕСЯЧНЫЕ СПИСАНИЯ (запуск каждый день)
+// ═══════════════════════════════════════════
+export const processMonthlyVenuePayments = onSchedule(
+  { schedule: '0 0 * * *', timeZone: 'Europe/Moscow' }, // <-- Запуск каждый день в полночь
+  async () => {
+    const settingsSnap = await db.collection('settings').doc('general').get();
+    const monthlyCost = settingsSnap.exists ? (settingsSnap.data()?.monthlyCostPerPlace ?? 100) : 100;
+    if (monthlyCost <= 0) return;
+
+    const now = new Date();
+
+    // Получаем все активные точки
+    const placesSnap = await db.collection('places').where('isActive', '==', true).get();
+
+    for (const placeDoc of placesSnap.docs) {
+      const place = placeDoc.data();
+      const venueUid = place.ownerUid;
+
+      if (!venueUid) continue;
+
+      // Вычисляем дату списания (если поля нет, берем от даты создания)
+      let nextBillingDate: Date;
+      if (place.nextBillingDate) {
+        nextBillingDate = place.nextBillingDate.toDate();
+      } else if (place.createdAt) {
+        nextBillingDate = new Date(place.createdAt.toMillis());
+        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+      } else {
+        // Фоллбэк для старых точек без даты
+        nextBillingDate = new Date();
+        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+      }
+
+      // Если дата наступила (сегодня или в прошлом)
+      if (nextBillingDate <= now) {
+        const vRef = db.collection('venues').doc(venueUid);
+        
+        // Переносим дату ровно на 1 месяц вперед
+        const newNextBillingDate = new Date(nextBillingDate);
+        newNextBillingDate.setMonth(newNextBillingDate.getMonth() + 1);
+
+        await db.runTransaction(async (tx) => {
+          // Списываем деньги
+          tx.update(vRef, { balance: admin.firestore.FieldValue.increment(-monthlyCost) });
+          
+          // Записываем в историю
+          const txRef = db.collection('venue_transactions').doc();
+          tx.set(txRef, {
+            venueUid,
+            type: 'monthly_fee',
+            amount: -monthlyCost,
+            description: `Списание за точку «${place.name}»`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // Обновляем дату следующего списания для точки
+          tx.update(placeDoc.ref, {
+            nextBillingDate: admin.firestore.Timestamp.fromDate(newNextBillingDate)
+          });
+        });
+      }
+    }
+  }
+);
+
+export const cleanupVenueTransactions = onSchedule(
+  { schedule: 'every 24 hours', timeZone: 'Europe/Moscow' },
+  async () => {
+    const oneYearAgo = Date.now() - (365 * 24 * 60 * 60 * 1000);
+    const snap = await db.collection('venue_transactions')
+      .where('createdAt', '<', new Date(oneYearAgo))
+      .get();
+      
+    if (snap.empty) return;
+
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = db.batch();
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
 );

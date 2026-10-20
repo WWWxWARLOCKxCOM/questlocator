@@ -27,6 +27,7 @@ function fromDoc(id: string, d: any): Place {
     isActive: d.isActive ?? false,
     radiusMeters: typeof d.radiusMeters === 'number' ? d.radiusMeters : 50,
     createdAt: d.createdAt?.toMillis?.() ?? 0,
+    nextBillingDate: d.nextBillingDate?.toMillis?.() ?? 0, // <-- ДОБАВЛЕНО
   };
 }
 

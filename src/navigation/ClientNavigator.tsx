@@ -14,9 +14,11 @@ import FriendDetailScreen from '@/screens/client/FriendDetailScreen';
 import LevelsScreen from '@/screens/client/LevelsScreen';
 import TaskExecuteScreen from '@/screens/client/TaskExecuteScreen';
 import ShopScreen from '@/screens/client/ShopScreen';
+import NotificationsScreen from '@/screens/client/NotificationsScreen';
 import CustomClientDrawer from '@/navigation/CustomClientDrawer';
 import { SessionProvider } from '@/context/SessionContext';
 import { QuestTask } from '@/types';
+import AppHeader from '@/components/AppHeader';
 
 export type ClientStackParamList = {
   Home: undefined;
@@ -36,6 +38,7 @@ export type ClientDrawerParamList = {
   FriendsStack: undefined;
   Levels: undefined;
   Shop: undefined;
+  Notifications: undefined;
   Profile: undefined;
   History: undefined;
   PromoCodes: undefined;
@@ -88,7 +91,16 @@ export default function ClientNavigator() {
     <SessionProvider>
       <Drawer.Navigator
         drawerContent={(props) => <CustomClientDrawer {...props} />}
-        screenOptions={{ headerShown: true, swipeEnabled: false }}
+        screenOptions={({ navigation }) => ({
+          headerShown: true,
+          swipeEnabled: false,
+          header: () => (
+            <AppHeader
+              onBell={() => navigation.navigate('Notifications')}
+              onProfile={() => navigation.navigate('Profile')}
+            />
+          ),
+        })}
       >
         <Drawer.Screen
           name="MainStack"
@@ -101,7 +113,8 @@ export default function ClientNavigator() {
           options={{ title: 'Друзья', headerShown: false }}
         />
         <Drawer.Screen name="Levels" component={LevelsScreen} options={{ title: 'Уровни' }} />
-        <Drawer.Screen name="Shop" component={ShopScreen} options={{ title: 'Магазин' }} />
+        <Drawer.Screen name="Shop" component={ShopScreen} options={{ title: 'Промокоды и купоны' }} />
+        <Drawer.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Уведомления' }} />
         <Drawer.Screen name="Profile" component={ProfileScreen} options={{ title: 'Профиль' }} />
         <Drawer.Screen name="History" component={HistoryScreen} options={{ title: 'История' }} />
         <Drawer.Screen name="PromoCodes" component={PromoCodesScreen} options={{ title: 'Мои промокоды' }} />

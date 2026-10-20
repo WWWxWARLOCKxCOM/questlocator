@@ -12,8 +12,11 @@ import { AdminStackParamList } from '@/navigation/AdminNavigator';
 import {
   subscribeToAllPlaces, updatePlace, deletePlace, assignPlaceOwner,
 } from '@/services/placesService';
-import { subscribeToAllVenues, updateVenuePointsLimit } from '@/services/venueService';
-import { updateVenueCouponsLimit } from '@/services/couponService'; // <-- ИМПОРТ
+import { 
+  subscribeToAllVenues, 
+  updateVenueLimits, 
+  adjustVenueBalance 
+} from '@/services/venueService'; // <-- ОБНОВЛЕННЫЙ ИМПОРТ
 import LevelConstructor, { DEFAULT_LEVEL_CONFIG } from '@/components/LevelConstructor';
 import {
   Place, PlaceCategory, VenueAccount, LevelConfig,
@@ -67,10 +70,15 @@ export default function AdminVenueDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [ownerPickerOpen, setOwnerPickerOpen] = useState<Place | null>(null);
   
-  // Стейты для модалки лимитов
+  // Модалка лимитов
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [newLimit, setNewLimit] = useState('');
-  const [newCouponsLimit, setNewCouponsLimit] = useState(''); // <-- ЛИМИТ КУПОНОВ
+  const [newCouponsLimit, setNewCouponsLimit] = useState('');
+
+  // Модалка изменения баланса
+  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceDesc, setBalanceDesc] = useState('');
 
   useEffect(() => subscribeToAllPlaces(setPlaces), []);
   useEffect(() => subscribeToAllVenues(setVenues), []);
@@ -182,7 +190,7 @@ export default function AdminVenueDetailScreen() {
   const openLimitModal = () => {
     if (!venue) return;
     setNewLimit(String(venue.pointsLimit));
-    setNewCouponsLimit(String(venue.couponsLimit ?? 1)); // <-- Берем текущий лимит купонов
+    setNewCouponsLimit(String(venue.couponsLimit ?? 1));
     setLimitModalOpen(true);
   };
 
@@ -197,12 +205,28 @@ export default function AdminVenueDetailScreen() {
     
     setBusy(true);
     try {
-      // Сохраняем оба лимита параллельно
-      await Promise.all([
-        updateVenuePointsLimit(venue.uid, n),
-        updateVenueCouponsLimit(venue.uid, c),
-      ]);
+      await updateVenueLimits(venue.uid, n, c);
       setLimitModalOpen(false);
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveBalance = async () => {
+    if (!venue) return;
+    const amount = Number(balanceAmount);
+    if (!Number.isFinite(amount) || amount === 0) {
+      return Alert.alert('Введите сумму', 'Число должно быть отлично от 0 (может быть отрицательным)');
+    }
+    
+    setBusy(true);
+    try {
+      await adjustVenueBalance(venue.uid, amount, balanceDesc.trim());
+      setBalanceModalOpen(false);
+      setBalanceAmount('');
+      setBalanceDesc('');
     } catch (e: any) {
       Alert.alert('Ошибка', e?.message);
     } finally {
@@ -230,30 +254,33 @@ export default function AdminVenueDetailScreen() {
                 <Text style={styles.headerMeta}>{venue.contactPhone}</Text>
               ) : null}
 
-              {/* Обновленная статистика: добавлены купоны */}
+              {/* Статистика заведения */}
               <View style={styles.headerStats}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statValue}>{venue.pointsUsed}</Text>
-                  <Text style={styles.statLabel}>точек занято</Text>
+                <View style={[styles.statBox, { backgroundColor: '#fff8e1', borderColor: '#f1c40f', borderWidth: 1 }]}>
+                  <Text style={[styles.statValue, { color: '#d35400' }]}>{venue.balance || 0}</Text>
+                  <Text style={styles.statLabel}>баланс</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statValue}>{venue.pointsLimit}</Text>
-                  <Text style={styles.statLabel}>точек лимит</Text>
+                  <Text style={styles.statValue}>{venue.pointsUsed} / {venue.pointsLimit}</Text>
+                  <Text style={styles.statLabel}>точки</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statValue}>{venue.couponsUsed ?? 0}</Text>
-                  <Text style={styles.statLabel}>купонов</Text>
-                </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statValue}>{venue.couponsLimit ?? 1}</Text>
-                  <Text style={styles.statLabel}>лимит куп.</Text>
+                  <Text style={styles.statValue}>{venue.couponsUsed ?? 0} / {venue.couponsLimit ?? 1}</Text>
+                  <Text style={styles.statLabel}>купоны</Text>
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.editLimitBtn} onPress={openLimitModal}>
-                <MaterialCommunityIcons name="pencil" size={16} color="#fff" />
-                <Text style={styles.editLimitText}>Изменить лимиты</Text>
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                <TouchableOpacity style={[styles.editLimitBtn, { backgroundColor: '#3498db' }]} onPress={openLimitModal}>
+                  <MaterialCommunityIcons name="pencil" size={16} color="#fff" />
+                  <Text style={styles.editLimitText}>Лимиты</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.editLimitBtn, { backgroundColor: '#f39c12' }]} onPress={() => setBalanceModalOpen(true)}>
+                  <MaterialCommunityIcons name="cash-edit" size={16} color="#fff" />
+                  <Text style={styles.editLimitText}>Баланс</Text>
+                </TouchableOpacity>
+              </View>
 
               <Text style={styles.sectionTitle}>
                 Точки заведения ({visiblePlaces.length})
@@ -305,51 +332,30 @@ export default function AdminVenueDetailScreen() {
                   {(item.website || item.phone || item.averageCheck || item.menuPdfUrl) && (
                     <View style={styles.infoBlock}>
                       {item.website ? (
-                        <TouchableOpacity
-                          style={styles.infoRow}
-                          onPress={() => openLink(item.website!)}
-                        >
+                        <TouchableOpacity style={styles.infoRow} onPress={() => openLink(item.website!)}>
                           <MaterialCommunityIcons name="web" size={16} color="#3498db" />
-                          <Text style={[styles.infoText, styles.linkText]}>
-                            {item.website}
-                          </Text>
+                          <Text style={[styles.infoText, styles.linkText]}>{item.website}</Text>
                         </TouchableOpacity>
                       ) : null}
 
                       {item.phone ? (
-                        <TouchableOpacity
-                          style={styles.infoRow}
-                          onPress={() => openLink(`tel:${item.phone}`)}
-                        >
+                        <TouchableOpacity style={styles.infoRow} onPress={() => openLink(`tel:${item.phone}`)}>
                           <MaterialCommunityIcons name="phone" size={16} color="#27ae60" />
-                          <Text style={[styles.infoText, styles.linkText]}>
-                            {item.phone}
-                          </Text>
+                          <Text style={[styles.infoText, styles.linkText]}>{item.phone}</Text>
                         </TouchableOpacity>
                       ) : null}
 
                       {typeof item.averageCheck === 'number' ? (
                         <View style={styles.infoRow}>
                           <MaterialCommunityIcons name="cash" size={16} color="#27ae60" />
-                          <Text style={styles.infoText}>
-                            Средний чек: от {item.averageCheck} ₽
-                          </Text>
+                          <Text style={styles.infoText}>Средний чек: от {item.averageCheck} ₽</Text>
                         </View>
                       ) : null}
 
                       {item.menuPdfUrl ? (
-                        <TouchableOpacity
-                          style={styles.infoRow}
-                          onPress={() => openLink(item.menuPdfUrl!)}
-                        >
-                          <MaterialCommunityIcons
-                            name="file-pdf-box"
-                            size={16}
-                            color="#c0392b"
-                          />
-                          <Text style={[styles.infoText, styles.linkText]}>
-                            Открыть меню (PDF)
-                          </Text>
+                        <TouchableOpacity style={styles.infoRow} onPress={() => openLink(item.menuPdfUrl!)}>
+                          <MaterialCommunityIcons name="file-pdf-box" size={16} color="#c0392b" />
+                          <Text style={[styles.infoText, styles.linkText]}>Открыть меню (PDF)</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -398,18 +404,10 @@ export default function AdminVenueDetailScreen() {
                   {item.qrCode ? (
                     <>
                       <View style={styles.qrWrap}>
-                        <QRCode
-                          value={item.qrCode}
-                          size={240}
-                          backgroundColor="#fff"
-                          color="#000"
-                        />
+                        <QRCode value={item.qrCode} size={240} backgroundColor="#fff" color="#000" />
                       </View>
                       <Text style={styles.codeText} selectable>{item.qrCode}</Text>
-                      <TouchableOpacity
-                        style={styles.copyBtn}
-                        onPress={() => handleCopy(item.qrCode)}
-                      >
+                      <TouchableOpacity style={styles.copyBtn} onPress={() => handleCopy(item.qrCode)}>
                         <MaterialCommunityIcons name="content-copy" size={16} color="#fff" />
                         <Text style={styles.copyText}>Скопировать код</Text>
                       </TouchableOpacity>
@@ -419,26 +417,17 @@ export default function AdminVenueDetailScreen() {
                   )}
 
                   <View style={styles.actionsRow}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.editBtn]}
-                      onPress={() => openEdit(item)}
-                    >
+                    <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => openEdit(item)}>
                       <MaterialCommunityIcons name="pencil" size={16} color="#fff" />
                       <Text style={styles.actionText}>Изменить</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.ownerBtn]}
-                      onPress={() => setOwnerPickerOpen(item)}
-                    >
+                    <TouchableOpacity style={[styles.actionBtn, styles.ownerBtn]} onPress={() => setOwnerPickerOpen(item)}>
                       <MaterialCommunityIcons name="account-switch" size={16} color="#fff" />
                       <Text style={styles.actionText}>Владелец</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.deleteBtn]}
-                      onPress={() => handleDelete(item)}
-                    >
+                    <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDelete(item)}>
                       <MaterialCommunityIcons name="trash-can" size={16} color="#fff" />
                       <Text style={styles.actionText}>Удалить</Text>
                     </TouchableOpacity>
@@ -508,9 +497,7 @@ export default function AdminVenueDetailScreen() {
                 style={[styles.chip, editState?.category === c && styles.chipActive]}
                 onPress={() => setEditState((s) => (s ? { ...s, category: c } : s))}
               >
-                <Text
-                  style={editState?.category === c ? styles.chipTextActive : styles.chipText}
-                >
+                <Text style={editState?.category === c ? styles.chipTextActive : styles.chipText}>
                   {CATEGORY_LABELS[c]}
                 </Text>
               </TouchableOpacity>
@@ -546,29 +533,18 @@ export default function AdminVenueDetailScreen() {
             keyboardType="numeric"
             value={String(editState?.radiusMeters ?? 50)}
             onChangeText={(v) =>
-              setEditState((s) =>
-                s ? { ...s, radiusMeters: Math.max(1, Number(v) || 50) } : s,
-              )
+              setEditState((s) => (s ? { ...s, radiusMeters: Math.max(1, Number(v) || 50) } : s))
             }
           />
 
-          {/* ─── Система уровней ─── */}
           <Text style={styles.sectionLabel}>Уровни и скидки</Text>
           <LevelConstructor
             value={editState?.levels ?? DEFAULT_LEVEL_CONFIG}
             onChange={(v) => setEditState((s) => (s ? { ...s, levels: v } : s))}
           />
 
-          <TouchableOpacity
-            style={[styles.saveBtn, busy && { opacity: 0.6 }]}
-            onPress={handleSave}
-            disabled={busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.saveText}>Сохранить</Text>
-            )}
+          <TouchableOpacity style={[styles.saveBtn, busy && { opacity: 0.6 }]} onPress={handleSave} disabled={busy}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Сохранить</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditing(null)}>
             <Text style={styles.cancelText}>Отмена</Text>
@@ -577,20 +553,12 @@ export default function AdminVenueDetailScreen() {
       </Modal>
 
       {/* Модалка выбора владельца */}
-      <Modal
-        visible={!!ownerPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOwnerPickerOpen(null)}
-      >
+      <Modal visible={!!ownerPickerOpen} transparent animationType="fade" onRequestClose={() => setOwnerPickerOpen(null)}>
         <View style={styles.pickerBg}>
           <View style={styles.pickerCard}>
             <Text style={styles.pickerTitle}>Назначить владельца</Text>
 
-            <TouchableOpacity
-              style={styles.pickerItem}
-              onPress={() => ownerPickerOpen && handleAssignOwner(ownerPickerOpen, null)}
-            >
+            <TouchableOpacity style={styles.pickerItem} onPress={() => ownerPickerOpen && handleAssignOwner(ownerPickerOpen, null)}>
               <Text style={styles.pickerItemText}>Без владельца (админ)</Text>
             </TouchableOpacity>
 
@@ -601,9 +569,7 @@ export default function AdminVenueDetailScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.pickerItem}
-                  onPress={() =>
-                    ownerPickerOpen && handleAssignOwner(ownerPickerOpen, item.uid)
-                  }
+                  onPress={() => ownerPickerOpen && handleAssignOwner(ownerPickerOpen, item.uid)}
                 >
                   <Text style={styles.pickerItemText}>{item.companyName}</Text>
                   <Text style={styles.pickerItemMeta}>
@@ -613,10 +579,7 @@ export default function AdminVenueDetailScreen() {
               )}
             />
 
-            <TouchableOpacity
-              style={styles.pickerCancel}
-              onPress={() => setOwnerPickerOpen(null)}
-            >
+            <TouchableOpacity style={styles.pickerCancel} onPress={() => setOwnerPickerOpen(null)}>
               <Text style={styles.pickerCancelText}>Отмена</Text>
             </TouchableOpacity>
           </View>
@@ -624,12 +587,7 @@ export default function AdminVenueDetailScreen() {
       </Modal>
 
       {/* Модалка изменения лимитов (точек и купонов) */}
-      <Modal
-        visible={limitModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLimitModalOpen(false)}
-      >
+      <Modal visible={limitModalOpen} transparent animationType="fade" onRequestClose={() => setLimitModalOpen(false)}>
         <View style={styles.pickerBg}>
           <View style={styles.pickerCard}>
             <Text style={styles.pickerTitle}>Лимиты для {venue?.companyName}</Text>
@@ -662,16 +620,56 @@ export default function AdminVenueDetailScreen() {
                 onPress={saveLimit}
                 disabled={busy}
               >
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.saveText}>Сохранить</Text>
-                )}
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Сохранить</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* НОВАЯ Модалка корректировки баланса */}
+      <Modal visible={balanceModalOpen} transparent animationType="fade" onRequestClose={() => setBalanceModalOpen(false)}>
+        <View style={styles.pickerBg}>
+          <View style={styles.pickerCard}>
+            <Text style={styles.pickerTitle}>Корректировка баланса</Text>
+            <Text style={{ color: '#666', marginBottom: 12 }}>Текущий баланс: {venue?.balance || 0}</Text>
+            
+            <Text style={styles.label}>Сумма (+/-)</Text>
+            <TextInput
+              style={[styles.input, { marginTop: 4 }]}
+              keyboardType="numeric"
+              value={balanceAmount}
+              onChangeText={setBalanceAmount}
+              placeholder="Например: 500 или -100"
+            />
+
+            <Text style={[styles.label, { marginTop: 12 }]}>Причина (необязательно)</Text>
+            <TextInput
+              style={[styles.input, { marginTop: 4 }]}
+              value={balanceDesc}
+              onChangeText={setBalanceDesc}
+              placeholder="Оплата, бонус и т.д."
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={[styles.saveBtn, { flex: 1, backgroundColor: '#eee', marginTop: 0 }]}
+                onPress={() => setBalanceModalOpen(false)}
+              >
+                <Text style={[styles.saveText, { color: '#333' }]}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { flex: 1, marginTop: 0, backgroundColor: '#f39c12' }, busy && { opacity: 0.6 }]}
+                onPress={saveBalance}
+                disabled={busy}
+              >
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Применить</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -689,8 +687,7 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 20, fontWeight: '800', marginTop: 6 },
   headerMeta: { color: '#666', fontSize: 13 },
   
-  // Изменено на wrap для 4 плашек
-  headerStats: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 12 },
+  headerStats: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 12 },
   statBox: {
     backgroundColor: '#f0f0f0', borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 8,
@@ -699,9 +696,9 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontWeight: '800' },
   statLabel: { color: '#666', fontSize: 11, marginTop: 2 },
   
+  headerActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
   editLimitBtn: {
-    marginTop: 12, backgroundColor: '#3498db', borderRadius: 8,
-    paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
   editLimitText: { color: '#fff', fontWeight: '700', fontSize: 13 },

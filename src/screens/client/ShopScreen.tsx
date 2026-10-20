@@ -53,7 +53,7 @@ export default function ShopScreen() {
           setBusyId(c.id);
           try {
             const res = await buyCoupon(c.id);
-            Alert.alert('Готово', `Код куплена: ${res.code}\nПосмотреть QR можно во вкладке «Мои».`);
+            Alert.alert('Готово', `Код куплен: ${res.code}\nПосмотреть QR можно во вкладке «Промокоды и купоны».`);
             setTab('mine');
           } catch (e: any) {
             Alert.alert('Ошибка', e?.message ?? 'Не удалось купить');
@@ -127,7 +127,7 @@ export default function ShopScreen() {
           <Text style={[styles.tabText, { color: tab === 'shop' ? '#fff' : colors.text }]}>Магазин</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.tab, { backgroundColor: tab === 'mine' ? colors.primary : 'transparent' }]} onPress={() => setTab('mine')}>
-          <Text style={[styles.tabText, { color: tab === 'mine' ? '#fff' : colors.text }]}>Мои ({myCoupons.length})</Text>
+          <Text style={[styles.tabText, { color: tab === 'mine' ? '#fff' : colors.text }]}>Промокоды и купоны ({myCoupons.length})</Text>
         </TouchableOpacity>
       </View>
 
@@ -145,7 +145,7 @@ export default function ShopScreen() {
         />
       )}
 
-      {/* Модалка с QR-кодом куплена */}
+      {/* Модалка с QR-кодом купленного купона */}
       <Modal visible={!!qrVisible} transparent animationType="fade" onRequestClose={() => setQrVisible(null)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   tab: { flex: 1, borderRadius: 20, paddingVertical: 8, alignItems: 'center' },
-  tabText: { fontWeight: '700', fontSize: 13 },
+  tabText: { fontWeight: '700', fontSize: 12 },
   list: { padding: 16, paddingBottom: 40 },
   card: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, marginBottom: 12 },
   img: { width: '100%', height: 140, alignItems: 'center', justifyContent: 'center' },

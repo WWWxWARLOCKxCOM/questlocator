@@ -48,13 +48,11 @@ export default function VenueMapScreen() {
     return () => { u1(); u2(); };
   }, [user]);
 
-  // Фокус на конкретной точке (когда приходят из «Управление точками»)
   useEffect(() => {
     const focusId = route.params?.focusPlaceId;
     if (!focusId || places.length === 0) return;
     const p = places.find((x) => x.id === focusId);
     if (p) setSelectedPlace(p);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.focusPlaceId, places.length]);
 
   const initialRegion = useMemo(() => {
@@ -74,7 +72,10 @@ export default function VenueMapScreen() {
     };
   }, [places]);
 
-  const canCreateMore = (venue?.pointsUsed ?? 0) < (venue?.pointsLimit ?? 1);
+  // Базовый лимит 2 (чтобы не было 0/0, если база не вернула данные)
+  const pointsLimit = venue?.pointsLimit ?? 2;
+  const couponsLimit = venue?.couponsLimit ?? 2;
+  const canCreateMore = (venue?.pointsUsed ?? 0) < pointsLimit;
 
   const handleLongPress = (e: MapPressEvent) => {
     if (!canCreateMore) return;
@@ -192,17 +193,30 @@ export default function VenueMapScreen() {
         )}
       </MapView>
 
-      <TouchableOpacity
-        style={styles.hamburger}
-        onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-      >
-        <Ionicons name="menu" size={24} color="#000" />
-      </TouchableOpacity>
+      {/* HEADER — меню + баллы по центру + лимиты справа */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          style={styles.hamburger}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+        >
+          <Ionicons name="menu" size={24} color="#000" />
+        </TouchableOpacity>
 
-      <View style={styles.counter}>
-        <Text style={styles.counterText}>
-          Точек: {venue?.pointsUsed ?? 0} / {venue?.pointsLimit ?? 0}
-        </Text>
+        <View style={styles.balanceBadge}>
+          <Text style={styles.balanceLabel}>Баллы:</Text>
+          <Text style={styles.balanceText}>{venue?.balance ?? 0}</Text>
+        </View>
+
+        <View style={styles.limitsBadge}>
+          <View style={styles.limitItem}>
+            <MaterialCommunityIcons name="map-marker" size={14} color="#2c3e50" />
+            <Text style={styles.limitText}>{venue?.pointsUsed ?? 0} / {pointsLimit}</Text>
+          </View>
+          <View style={styles.limitItem}>
+            <MaterialCommunityIcons name="ticket-percent" size={14} color="#e67e22" />
+            <Text style={styles.limitText}>{venue?.couponsUsed ?? 0} / {couponsLimit}</Text>
+          </View>
+        </View>
       </View>
 
       {canCreateMore && !newPoint && !selectedPlace && (
@@ -215,7 +229,7 @@ export default function VenueMapScreen() {
 
       {!canCreateMore && !selectedPlace && (
         <View style={styles.limitBox} pointerEvents="none">
-          <Text style={styles.limitText}>Лимит исчерпан. Обратитесь к админу.</Text>
+          <Text style={styles.limitTextAlert}>Лимит исчерпан. Обратитесь к админу.</Text>
         </View>
       )}
 
@@ -257,10 +271,7 @@ export default function VenueMapScreen() {
             >
               <Text style={styles.closeText}>Закрыть</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={handleEdit}
-            >
+            <TouchableOpacity style={styles.editBtn} onPress={handleEdit}>
               <Text style={styles.editText}>Изменить</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -279,20 +290,34 @@ export default function VenueMapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  topBar: {
+    position: 'absolute', 
+    top: 40, // Увеличен отступ, чтобы не наезжать на статус-бар
+    left: 16, 
+    right: 16,
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-start',
+  },
   hamburger: {
-    position: 'absolute', top: 16, left: 16, width: 44, height: 44,
-    borderRadius: 22, backgroundColor: '#fff', alignItems: 'center',
-    justifyContent: 'center', elevation: 4,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', elevation: 4,
   },
-  counter: {
-    position: 'absolute', top: 16, right: 16,
-    backgroundColor: '#fff', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8, elevation: 3,
+  balanceBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 16, height: 44, elevation: 4,
   },
-  counterText: { fontWeight: '700', fontSize: 14 },
+  balanceLabel: { fontSize: 14, fontWeight: '600', color: '#666', marginRight: 4 },
+  balanceText: { fontWeight: '800', fontSize: 16, color: '#2c3e50' },
+  limitsBadge: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 8, elevation: 4, gap: 4,
+  },
+  limitItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  limitText: { fontWeight: '700', fontSize: 12, color: '#333' },
 
   hintBox: {
-    position: 'absolute', top: 72, left: 16, right: 16,
+    position: 'absolute', top: 96, left: 16, right: 16,
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 10,
     padding: 10, alignItems: 'center', elevation: 2,
   },
@@ -303,7 +328,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fdecea', borderRadius: 10, padding: 14,
     alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#e74c3c',
   },
-  limitText: { color: '#c0392b', fontWeight: '600' },
+  limitTextAlert: { color: '#c0392b', fontWeight: '600' },
 
   newPointCard: {
     position: 'absolute', bottom: 24, left: 16, right: 16,

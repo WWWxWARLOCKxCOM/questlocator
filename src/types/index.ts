@@ -68,6 +68,7 @@ export interface VenueAccount {
   pointsUsed: number;
   couponsLimit: number;
   couponsUsed: number;
+  balance: number;               // ← НОВОЕ: баллы заведения
   isActive: boolean;
   createdAt: number;
 }
@@ -91,6 +92,7 @@ export interface Place {
   radiusMeters: number;
   levels?: LevelConfig;
   createdAt: number;
+  nextBillingDate?: number;      // ← НОВОЕ: дата следующего списания
 }
 
 export interface Quest {
@@ -214,6 +216,39 @@ export interface UserCoupon {
   createdAt: number;
 }
 
+// ═══════════════════════════════════════════
+//  ФИНАНСЫ ЗАВЕДЕНИЙ
+// ═══════════════════════════════════════════
+export interface VenueTransaction {
+  id: string;
+  venueUid: string;
+  type: 'quest_reward' | 'monthly_fee' | 'admin_adjustment';
+  amount: number;
+  description: string;
+  createdAt: number;
+}
+
+export interface GlobalSettings {
+  pointsPerQuest: number;
+  monthlyCostPerPlace: number;
+}
+
+// ═══════════════════════════════════════════
+//  УВЕДОМЛЕНИЯ (НОВОЕ)
+// ═══════════════════════════════════════════
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  type: 'quest_reward' | 'coupon_buy' | 'coupon_redeem';
+  isRead: boolean;
+  createdAt: number;
+}
+
+// ═══════════════════════════════════════════
+//  КОНСТАНТЫ
+// ═══════════════════════════════════════════
 export const CATEGORY_LABELS: Record<PlaceCategory, string> = {
   restaurant: 'Ресторан',
   cafe: 'Кафе',

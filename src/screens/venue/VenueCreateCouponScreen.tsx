@@ -18,6 +18,8 @@ export default function VenueCreateCouponScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [pricePoints, setPricePoints] = useState('100');
   const [maxPurchases, setMaxPurchases] = useState('0');
+  const [maxPerUser, setMaxPerUser] = useState('0'); // <-- НОВОЕ
+  const [cooldownHours, setCooldownHours] = useState('0'); // <-- НОВОЕ
   const [expiresInDays, setExpiresInDays] = useState('0');
   const [validForDays, setValidForDays] = useState('30');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,6 +64,8 @@ export default function VenueCreateCouponScreen() {
         photoUrl,
         pricePoints: pts,
         maxPurchases: Number(maxPurchases) || 0,
+        maxPerUser: Number(maxPerUser) || 0, // <-- ДОБАВЛЕНО
+        cooldownHours: Number(cooldownHours) || 0, // <-- ДОБАВЛЕНО
         expiresAt,
         validUntil,
       });
@@ -113,6 +117,22 @@ export default function VenueCreateCouponScreen() {
       <TextInput
         style={[styles.input, { color: colors.text, borderColor: colors.border }]}
         keyboardType="numeric" value={maxPurchases} onChangeText={setMaxPurchases}
+      />
+
+      <Text style={[styles.label, { color: colors.textMuted }]}>
+        Максимум покупок на 1 человека (0 = без ограничений)
+      </Text>
+      <TextInput
+        style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+        keyboardType="numeric" value={maxPerUser} onChangeText={setMaxPerUser}
+      />
+
+      <Text style={[styles.label, { color: colors.textMuted }]}>
+        Кулдаун между покупками, часов (0 = сразу)
+      </Text>
+      <TextInput
+        style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+        keyboardType="numeric" value={cooldownHours} onChangeText={setCooldownHours}
       />
 
       <Text style={[styles.label, { color: colors.textMuted }]}>

@@ -20,22 +20,26 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
-    // Фото заведений
+    // Фото заведений — админ ИЛИ заведение
     match /places-photos/{placeId}/{file} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-                   && request.auth.token.admin == true
+                   && (
+                        request.auth.token.admin == true
+                        || request.auth.token.venue == true
+                      )
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
 
-    // ─── ФОТО КУПОНОВ ───
-    // Читают все авторизованные (клиенты видят фото в магазине).
-    // Загружать может только админ.
+    // Фото купонов — админ ИЛИ заведение
     match /coupon-photos/{file} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-                   && request.auth.token.admin == true
+                   && (
+                        request.auth.token.admin == true
+                        || request.auth.token.venue == true
+                      )
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
