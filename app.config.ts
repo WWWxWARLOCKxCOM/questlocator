@@ -45,6 +45,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   scheme: 'questlocator',
 
+  // ─────────── НОВОЕ: Настройки для веб-версии ───────────
+  web: {
+    bundler: 'metro',
+    output: 'static',
+  },
+
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.questlocator.app',
