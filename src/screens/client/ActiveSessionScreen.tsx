@@ -32,7 +32,6 @@ export default function ActiveSessionScreen() {
 
   const [completions, setCompletions] = useState<Record<string, number>>({});
 
-  // Загружаем, сколько раз пользователь уже выполнял задания в этом заведении
   useEffect(() => {
     if (!place?.id) { setCompletions({}); return; }
     let cancelled = false;
@@ -61,9 +60,16 @@ export default function ActiveSessionScreen() {
     );
   }
 
-  const handleFinish = () => {
-    finish();
-    navigation.navigate('Map');
+  // Дожидаемся результата — если finish() упадёт, остаёмся на экране
+  // (finish() сам показывает Alert). Иначе пользователь ушёл бы на карту
+  // без баллов и без сообщения об ошибке.
+  const handleFinish = async () => {
+    try {
+      await finish();
+      navigation.navigate('Map');
+    } catch {
+      // finish() уже показал Alert с ошибкой и вернул сессию в state
+    }
   };
 
   const totalTaskBonus = session.taskBonusPoints ?? 0;

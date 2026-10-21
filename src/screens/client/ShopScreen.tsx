@@ -5,8 +5,10 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { db } from '@/config/firebase';
 import { subscribeToActiveCoupons, subscribeToUserCoupons, buyCoupon } from '@/services/couponService';
 import { Coupon, UserCoupon } from '@/types';
 
@@ -33,9 +35,7 @@ export default function ShopScreen() {
   useEffect(() => {
     if (!user) return;
     const u1 = subscribeToUserCoupons(user.uid, setMyCoupons);
-    const { doc, onSnapshot } = require('firebase/firestore');
-    const { db } = require('@/config/firebase');
-    const u2 = onSnapshot(doc(db, 'users', user.uid), (snap: any) => {
+    const u2 = onSnapshot(doc(db, 'users', user.uid), (snap) => {
       setBalance(snap.data()?.balance ?? 0);
     });
     return () => { u1(); u2(); };
@@ -145,7 +145,6 @@ export default function ShopScreen() {
         />
       )}
 
-      {/* Модалка с QR-кодом купленного купона */}
       <Modal visible={!!qrVisible} transparent animationType="fade" onRequestClose={() => setQrVisible(null)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>

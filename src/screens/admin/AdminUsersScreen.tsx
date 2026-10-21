@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { subscribeToAllUsers, adjustUserBalance } from '@/services/userService';
 import {
-  subscribeToUserRecentSessions,
+  subscribeToUserRecentSessionsAllPlaces,
   resetUserQuest,
 } from '@/services/sessionService';
 import { subscribeToAllPlaces } from '@/services/placesService';
@@ -27,28 +27,18 @@ export default function AdminUsersScreen() {
   useEffect(() => subscribeToAllUsers(setUsers), []);
   useEffect(() => subscribeToAllPlaces(setPlaces), []);
 
-  // Подписка на завершённые сессии выбранного пользователя за 24 часа.
-  // Слушаем по каждому заведению отдельно и объединяем результаты.
+  // Одна подписка вместо N (по одной на каждое заведение)
   useEffect(() => {
     if (!selected) {
       setRecentSessions([]);
       return;
     }
-    const merged: Record<string, QuestSession> = {};
-    const unsubs: (() => void)[] = [];
-
-    places.forEach((p) => {
-      const unsub = subscribeToUserRecentSessions(selected.uid, p.id, (sessions) => {
-        sessions.forEach((s) => { merged[s.id] = s; });
-        setRecentSessions(
-          Object.values(merged).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0)),
-        );
-      });
-      unsubs.push(unsub);
-    });
-
-    return () => { unsubs.forEach((u) => u()); };
-  }, [selected, places]);
+    const unsub = subscribeToUserRecentSessionsAllPlaces(
+      selected.uid,
+      setRecentSessions,
+    );
+    return () => unsub();
+  }, [selected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -177,7 +167,6 @@ export default function AdminUsersScreen() {
                 Баланс: {selected?.balance ?? 0}
               </Text>
 
-              {/* ─── Секция 1: Изменение баланса ─── */}
               <Text style={styles.sectionTitle}>Начислить / списать баллы</Text>
               <Text style={styles.label}>Изменение (например, 100 или -50)</Text>
               <TextInput
@@ -208,7 +197,6 @@ export default function AdminUsersScreen() {
                 )}
               </TouchableOpacity>
 
-              {/* ─── Секция 2: Сбросить пройденные квесты ─── */}
               <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
                 Пройденные квесты за 24 часа
               </Text>

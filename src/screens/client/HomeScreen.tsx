@@ -13,16 +13,18 @@ import DraggableFlatList, {
 } from 'react-native-draggable-flatlist';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useSession } from '@/context/SessionContext';
 import { useTheme } from '@/context/ThemeContext';
+import { db } from '@/config/firebase';
 import { subscribeToActivePlaces } from '@/services/placesService';
 import { subscribeToActiveQuestForPlace } from '@/services/questService';
 import { subscribeToUserLevels } from '@/services/levelService';
 import {
   subscribeToAllActiveSessions,
   subscribeToUserSessions,
-  startSession, // ДОБАВЛЕНО
+  startSession,
 } from '@/services/sessionService';
 import { subscribeToFriendUids } from '@/services/friendsService';
 import { getCurrentPosition } from '@/services/locationService';
@@ -40,8 +42,6 @@ import {
 
 const MAX_NEARBY_DISTANCE_M = 5000;
 const BASE_MAP_DELTA = 0.008;
-
-let hasCenteredThisSession = false;
 
 const CATEGORY_ICONS: Record<PlaceCategory, keyof typeof MaterialCommunityIcons.glyphMap> = {
   restaurant: 'silverware-fork-knife',
@@ -101,13 +101,15 @@ export default function HomeScreen() {
 
   const [pulseRadius, setPulseRadius] = useState(20);
 
-  // Стейты для ручного ввода кода
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
   const contentSheetRef = useRef<BottomSheet>(null);
   const placeSheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
+
+  // центрирование карты на геопозиции — только один раз за сессию компонента
+  const hasCenteredRef = useRef(false);
 
   const contentSnapPoints = useMemo(
     () => [Math.max(140, Math.round(headerH) + 12), '50%'],
@@ -139,9 +141,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!user) return;
-    const { doc, onSnapshot } = require('firebase/firestore');
-    const { db } = require('@/config/firebase');
-    return onSnapshot(doc(db, 'users', user.uid), (snap: any) => {
+    return onSnapshot(doc(db, 'users', user.uid), (snap) => {
       const d = snap.data() ?? {};
       setProfile({ balance: d.balance ?? 0, avatarUrl: d.avatarUrl ?? null });
     });
@@ -149,8 +149,8 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!loc) return;
-    if (hasCenteredThisSession) return;
-    hasCenteredThisSession = true;
+    if (hasCenteredRef.current) return;
+    hasCenteredRef.current = true;
     const t = setTimeout(() => {
       mapRef.current?.animateToRegion(
         {
@@ -216,12 +216,12 @@ export default function HomeScreen() {
     try {
       const payload = manualCode.startsWith('quest://') ? manualCode : `quest://place/${manualCode}`;
       const res = await startSession(payload, loc.latitude, loc.longitude);
-      
+
       if (res.ok && res.sessionId) {
         setManualModalVisible(false);
         setManualCode('');
         Alert.alert('Успех', 'Квест начат!', [
-          { text: 'OK', onPress: () => navigation.navigate('ActiveSession') }
+          { text: 'OK', onPress: () => navigation.navigate('ActiveSession') },
         ]);
       } else {
         Alert.alert('Ошибка', 'Не удалось начать квест. Проверьте код и геолокацию.');
@@ -901,8 +901,7 @@ export default function HomeScreen() {
                       <Text style={[styles.questLine, { color: colors.text }]}>
                         🏆 До {selectedQuest.rewardPoints} баллов
                       </Text>
-                      
-                      {/* БЛОК С ДВУМЯ КНОПКАМИ */}
+
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                         <TouchableOpacity
                           style={[
@@ -923,7 +922,7 @@ export default function HomeScreen() {
                             Сканировать
                           </Text>
                         </TouchableOpacity>
-                        
+
                         <TouchableOpacity
                           style={[
                             styles.startBtn,
@@ -951,7 +950,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* МОДАЛКА ДЛЯ ВВОДА КОДА */}
       <Modal visible={manualModalVisible} transparent animationType="fade" onRequestClose={() => setManualModalVisible(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
@@ -965,14 +963,14 @@ export default function HomeScreen() {
               autoCapitalize="none"
             />
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-              <TouchableOpacity 
-                style={[styles.startBtn, { flex: 1, backgroundColor: colors.surfaceAlt }]} 
+              <TouchableOpacity
+                style={[styles.startBtn, { flex: 1, backgroundColor: colors.surfaceAlt }]}
                 onPress={() => { setManualModalVisible(false); setManualCode(''); }}
               >
                 <Text style={[styles.startBtnText, { color: colors.text }]}>Отмена</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.startBtn, { flex: 1, backgroundColor: colors.primary }]} 
+              <TouchableOpacity
+                style={[styles.startBtn, { flex: 1, backgroundColor: colors.primary }]}
                 onPress={handleManualStart}
               >
                 <Text style={styles.startBtnText}>Начать</Text>
@@ -1102,7 +1100,7 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
   questLine: { fontSize: 15, marginBottom: 4 },
   startBtn: {
-    borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center'
+    borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
   },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   sessionBadge: {

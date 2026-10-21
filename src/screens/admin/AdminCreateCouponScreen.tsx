@@ -16,6 +16,8 @@ import { createCoupon, updateCoupon } from '@/services/couponService';
 
 type Rt = RouteProp<AdminStackParamList, 'AdminCreateCoupon'>;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export default function AdminCreateCouponScreen() {
   const navigation = useNavigation();
   const route = useRoute<Rt>();
@@ -54,6 +56,20 @@ export default function AdminCreateCouponScreen() {
       setMaxPerUser(String(d.maxPerUser ?? 0));
       setCooldownHours(String(d.cooldownHours ?? 0));
       setIsActive(d.isActive !== false);
+
+      // Конвертируем absolute timestamps обратно в дни, чтобы не сбросить
+      // сроки при сохранении.
+      const now = Date.now();
+      if (typeof d.expiresAt === 'number' && d.expiresAt > 0) {
+        setExpiresInDays(String(Math.max(0, Math.ceil((d.expiresAt - now) / DAY_MS))));
+      } else {
+        setExpiresInDays('0');
+      }
+      if (typeof d.validUntil === 'number' && d.validUntil > 0) {
+        setValidForDays(String(Math.max(1, Math.ceil((d.validUntil - now) / DAY_MS))));
+      } else {
+        setValidForDays('30');
+      }
       setIsLoading(false);
     })();
   }, [editingId, navigation]);
@@ -86,10 +102,10 @@ export default function AdminCreateCouponScreen() {
 
       const now = Date.now();
       const expiresAt = Number(expiresInDays) > 0
-        ? now + Number(expiresInDays) * 24 * 60 * 60 * 1000
+        ? now + Number(expiresInDays) * DAY_MS
         : undefined;
       const validUntil = Number(validForDays) > 0
-        ? now + Number(validForDays) * 24 * 60 * 60 * 1000
+        ? now + Number(validForDays) * DAY_MS
         : undefined;
 
       const input = {
@@ -105,8 +121,8 @@ export default function AdminCreateCouponScreen() {
       };
 
       if (editingId) {
-        await updateCoupon(editingId, input as any);
-        await updateCoupon(editingId, { isActive } as any);
+        // Один вызов вместо двух
+        await updateCoupon(editingId, { ...input, isActive } as any);
       } else {
         await createCoupon(input);
       }

@@ -1,6 +1,5 @@
 /**
- * Работа с сессиями. Дополнено: подписка на все активные сессии (для карты),
- * подписка на сессии пользователя (для админ-панели), resetUserQuest.
+ * Работа с сессиями.
  */
 import {
   collection,
@@ -53,6 +52,21 @@ export async function startSessionFromQr(input: {
     userLng: input.userLocation.longitude,
   });
   return res.data;
+}
+
+/**
+ * Алиас с удобной сигнатурой (qrPayload, lat, lng).
+ * Используется в HomeScreen и MapScreen для ручного ввода кода.
+ */
+export async function startSession(
+  qrPayload: string,
+  latitude: number,
+  longitude: number,
+) {
+  return startSessionFromQr({
+    qrPayload,
+    userLocation: { latitude, longitude },
+  });
 }
 
 export async function endSession(sessionId: string) {
@@ -142,15 +156,7 @@ export function subscribeToAllActiveSessions(
   );
 }
 
-/**
- * Сессии пользователя в заведении за последние 24 часа (для админки).
- *
- * ИСПРАВЛЕНИЕ: раньше был `.where('endedAt', '>', dayAgo).orderBy('endedAt', 'desc')`.
- * Такой запрос требует составного индекса с endedAt и плохо сочетается с
- * inequality-фильтром + обратной сортировкой. Теперь запрос идёт только по
- * трём полям (userId, placeId, status), а диапазон по времени и сортировка
- * делаются на клиенте в JS. Это исключает требование новых индексов.
- */
+/** Сессии пользователя в конкретном заведении за последние 24 часа. */
 export function subscribeToUserRecentSessions(
   userId: string,
   placeId: string,
@@ -175,6 +181,37 @@ export function subscribeToUserRecentSessions(
     (err) => {
       // eslint-disable-next-line no-console
       console.warn('[sessionService] recent error:', err.message);
+      cb([]);
+    },
+  );
+}
+
+/**
+ * Все завершённые сессии пользователя за последние 24 часа (для админки).
+ * Одна подписка вместо N (по одной на каждое заведение).
+ */
+export function subscribeToUserRecentSessionsAllPlaces(
+  userId: string,
+  cb: (sessions: QuestSession[]) => void,
+) {
+  const q = query(
+    collection(db, 'sessions'),
+    where('userId', '==', userId),
+    where('status', '==', 'completed'),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const dayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+      const list = snap.docs
+        .map((d) => fromDoc(d.id, d.data()))
+        .filter((s) => (s.endedAt ?? 0) >= dayAgoMs)
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+      cb(list);
+    },
+    (err) => {
+      // eslint-disable-next-line no-console
+      console.warn('[sessionService] user recent error:', err.message);
       cb([]);
     },
   );

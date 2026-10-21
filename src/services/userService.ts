@@ -11,6 +11,7 @@ import {
   updateDoc,
   addDoc,
   getDoc,
+  increment,
   serverTimestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -69,17 +70,24 @@ export async function adjustUserBalance(
   await ensureAdminToken();
 
   const ref = doc(db, COL, userId);
+
+  // Read current balance first (for negative check + audit log)
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('Пользователь не найден');
 
   const current = snap.data().balance ?? 0;
-  const next = current + delta;
-  if (next < 0) {
-    throw new Error(`Нельзя списать ${Math.abs(delta)} баллов: у пользователя только ${current}`);
+  if (current + delta < 0) {
+    throw new Error(
+      `Нельзя списать ${Math.abs(delta)} баллов: у пользователя только ${current}`,
+    );
   }
 
-  await updateDoc(ref, { balance: next });
+  // Атомарное изменение (защита от гонки между двумя админами)
+  await updateDoc(ref, { balance: increment(delta) });
 
+  const next = current + delta;
+
+  // Аудит (не критично, если упадёт)
   try {
     await addDoc(collection(db, AUDIT_COL), {
       userId,

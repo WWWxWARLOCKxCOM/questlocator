@@ -4,7 +4,7 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions, storage } from '@/config/firebase';
-import { Place, PlaceCategory } from '@/types';
+import { Place, PlaceCategory, LevelConfig } from '@/types';
 
 const COL = 'places';
 
@@ -26,8 +26,9 @@ function fromDoc(id: string, d: any): Place {
     qrCode: d.qrCode ?? '',
     isActive: d.isActive ?? false,
     radiusMeters: typeof d.radiusMeters === 'number' ? d.radiusMeters : 50,
+    levels: d.levels ?? undefined,
     createdAt: d.createdAt?.toMillis?.() ?? 0,
-    nextBillingDate: d.nextBillingDate?.toMillis?.() ?? 0, // <-- ДОБАВЛЕНО
+    nextBillingDate: d.nextBillingDate?.toMillis?.() ?? 0,
   };
 }
 
@@ -97,7 +98,8 @@ interface CreatePlaceInput {
   category: PlaceCategory;
   isActive: boolean;
   radiusMeters: number;
-  ownerUid?: string | null; // только для админа
+  ownerUid?: string | null;
+  levels?: LevelConfig;
 }
 
 export async function createPlace(input: CreatePlaceInput): Promise<string> {
@@ -118,7 +120,9 @@ export async function createPlace(input: CreatePlaceInput): Promise<string> {
     description: input.description,
     website: input.website ?? '',
     phone: input.phone ?? '',
-    averageCheck: typeof input.averageCheck === 'number' ? input.averageCheck : undefined,
+    averageCheck: typeof input.averageCheck === 'number' && Number.isFinite(input.averageCheck)
+      ? input.averageCheck
+      : undefined,
     menuPdfUrl: input.menuPdfUrl ?? '',
     latitude: input.latitude,
     longitude: input.longitude,
@@ -129,6 +133,17 @@ export async function createPlace(input: CreatePlaceInput): Promise<string> {
   });
 
   const placeId = res.data.placeId;
+
+  // Сохраняем уровни (если заданы) — через updatePlace, чтобы не зависеть
+  // от того, принимает ли createPlace поле levels.
+  if (input.levels) {
+    try {
+      await updatePlace(placeId, { levels: input.levels });
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn('[placesService] levels save failed:', e?.message);
+    }
+  }
 
   // Загружаем фото и обновляем документ
   if (input.photoUri) {

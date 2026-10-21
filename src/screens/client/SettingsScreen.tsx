@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Switch, Pressable, StyleSheet, Alert } from 'react-native';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -17,7 +17,9 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!user) return;
     return onSnapshot(doc(db, 'users', user.uid), (snap) => {
-      setHideOnMap(snap.data()?.hideOnMap === true);
+      const d = snap.data() ?? {};
+      setHideOnMap(d.hideOnMap === true);
+      setNotificationsEnabled(d.notificationsEnabled !== false);
     });
   }, [user]);
 
@@ -28,6 +30,19 @@ export default function SettingsScreen() {
       setHideOnMap(value);
     } catch (e: any) {
       Alert.alert('Ошибка', e?.message ?? 'Не удалось изменить настройку');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { notificationsEnabled: value });
+      setNotificationsEnabled(value);
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.message ?? 'Не удалось сохранить настройку');
     } finally {
       setBusy(false);
     }
@@ -49,7 +64,11 @@ export default function SettingsScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[styles.label, { color: colors.text }]}>Уведомления</Text>
         </View>
-        <Switch value={notificationsEnabled} onValueChange={setNotificationsEnabled} />
+        <Switch
+          value={notificationsEnabled}
+          onValueChange={handleToggleNotifications}
+          disabled={busy}
+        />
       </View>
 
       <View style={[styles.row, { borderBottomColor: colors.border }]}>

@@ -5,14 +5,15 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // Подменяем карты на нашу безопасную заглушку
+    // Полноценный Google-Maps полифилл для react-native-maps.
+    // Веб-версия теперь интерактивна: pan/zoom/клики/маркеры/круги/animateToRegion.
     if (moduleName === 'react-native-maps') {
       return {
         filePath: path.resolve(__dirname, 'src/mocks/mock-maps.js'),
         type: 'sourceFile',
       };
     }
-    // Камеру оставляем заглушкой
+    // Камера оставляем заглушкой
     if (moduleName === 'react-native-vision-camera') {
       return {
         filePath: path.resolve(__dirname, 'src/mocks/mock-camera.js'),
@@ -20,7 +21,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       };
     }
   }
-  
+
   return context.resolveRequest(context, moduleName, platform);
 };
 
