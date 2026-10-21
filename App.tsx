@@ -2,6 +2,7 @@ import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PortalProvider } from '@gorhom/portal';
+import { Platform } from 'react-native'; // <-- ДОБАВЛЕНО
 import { ThemeProvider } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -23,9 +24,16 @@ function AppGate() {
   useEffect(() => {
     (async () => {
       try {
-        const [p, t] = await Promise.all([hasAskedPermissions(), hasChosenTheme()]);
-        setPermissionsDone(p);
+        const t = await hasChosenTheme();
         setThemeDone(t);
+
+        // Если это веб-версия, мы пропускаем экран разрешений
+        if (Platform.OS === 'web') {
+          setPermissionsDone(true);
+        } else {
+          const p = await hasAskedPermissions();
+          setPermissionsDone(p);
+        }
       } finally {
         setChecking(false);
       }
