@@ -3,7 +3,6 @@ import {
   View, StyleSheet, Text, TouchableOpacity, Image, ScrollView,
   Linking, Alert, Platform,
 } from 'react-native';
-import Constants from 'expo-constants';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Portal } from '@gorhom/portal';
@@ -133,8 +132,15 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.focusPlaceId, places.length]);
 
-  const initialRegion: Region | undefined = useMemo(() => {
-    if (!userLocation) return undefined;
+  const defaultRegion = {
+    latitude: 55.751244,
+    longitude: 37.618423,
+    latitudeDelta: 0.1,
+    longitudeDelta: 0.1,
+  };
+
+  const initialRegion: Region = useMemo(() => {
+    if (!userLocation) return defaultRegion;
     return {
       latitude: userLocation.latitude,
       longitude: userLocation.longitude,
@@ -219,11 +225,10 @@ export default function MapScreen() {
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
-        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={Platform.OS !== 'web'}
+        showsMyLocationButton={Platform.OS !== 'web'}
       >
         {places.map((place) => {
           const sessions = sessionsByPlace[place.id] ?? [];
@@ -283,7 +288,7 @@ export default function MapScreen() {
                 />
               )}
 
-              {sessions.length > 0 && (
+              {sessions.length > 0 && Platform.OS !== 'web' && (
                 <Marker
                   coordinate={{
                     latitude: place.latitude - 0.0005,

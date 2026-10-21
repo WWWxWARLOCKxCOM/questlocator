@@ -17,7 +17,6 @@ import {
   markThemeChosen,
 } from './src/services/permissionsService';
 
-// Импортируем провайдер карт только для веба
 let MapProvider = ({ children }: any) => children;
 if (Platform.OS === 'web') {
   const WebMaps = require('@teovilla/react-native-web-maps');

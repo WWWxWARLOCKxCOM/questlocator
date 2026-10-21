@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import Constants from 'expo-constants';
 import MapView, { Marker, PROVIDER_GOOGLE, MapPressEvent, Circle } from 'react-native-maps';
 import { DrawerActions, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -41,7 +40,6 @@ export default function AdminMapScreen() {
     <View style={styles.container}>
       <MapView
         provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
-        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={{
           latitude: 55.751244,
@@ -51,8 +49,8 @@ export default function AdminMapScreen() {
         }}
         onLongPress={handleLongPress}
         onPress={() => setSelectedPlace(null)}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={Platform.OS !== 'web'}
+        showsMyLocationButton={Platform.OS !== 'web'}
       >
         {places.map((place) => (
           <React.Fragment key={place.id}>
@@ -82,8 +80,8 @@ export default function AdminMapScreen() {
             <Marker
               coordinate={selectedPoint}
               pinColor="#e67e22"
-              draggable
-              onDragEnd={handleMarkerDrag}
+              draggable={Platform.OS !== 'web'}
+              onDragEnd={Platform.OS !== 'web' ? handleMarkerDrag : undefined}
             />
             {Platform.OS !== 'web' && (
               <Circle

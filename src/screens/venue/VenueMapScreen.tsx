@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Alert, Platform,
 } from 'react-native';
-import Constants from 'expo-constants';
 import MapView, {
   Marker, PROVIDER_GOOGLE, Circle, MapPressEvent,
 } from 'react-native-maps';
@@ -133,10 +132,9 @@ export default function VenueMapScreen() {
     <View style={styles.container}>
       <MapView
         provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
-        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
-        showsUserLocation
+        showsUserLocation={Platform.OS !== 'web'}
         onLongPress={handleLongPress}
         onPress={() => setSelectedPlace(null)}
       >
@@ -145,7 +143,7 @@ export default function VenueMapScreen() {
             <Marker
               coordinate={{ latitude: p.latitude, longitude: p.longitude }}
               onPress={() => setSelectedPlace(p)}
-              tracksViewChanges={false}
+              tracksViewChanges={Platform.OS !== 'web'}
               pinColor={Platform.OS === 'web' ? '#2c3e50' : undefined}
             >
               {Platform.OS !== 'web' && (
@@ -183,8 +181,8 @@ export default function VenueMapScreen() {
           <>
             <Marker
               coordinate={newPoint}
-              draggable
-              onDragEnd={handleDragEnd}
+              draggable={Platform.OS !== 'web'}
+              onDragEnd={Platform.OS !== 'web' ? handleDragEnd : undefined}
               pinColor="#e67e22"
             />
             {Platform.OS !== 'web' && (
@@ -295,7 +293,6 @@ export default function VenueMapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
   topBar: {
     position: 'absolute', 
     top: 40, 
@@ -320,21 +317,18 @@ const styles = StyleSheet.create({
   },
   limitItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   limitText: { fontWeight: '700', fontSize: 12, color: '#333' },
-
   hintBox: {
     position: 'absolute', top: 96, left: 16, right: 16,
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 10,
     padding: 10, alignItems: 'center', elevation: 2,
   },
   hintText: { fontSize: 13, color: '#333' },
-
   limitBox: {
     position: 'absolute', bottom: 24, left: 16, right: 16,
     backgroundColor: '#fdecea', borderRadius: 10, padding: 14,
     alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#e74c3c',
   },
   limitTextAlert: { color: '#c0392b', fontWeight: '600' },
-
   newPointCard: {
     position: 'absolute', bottom: 24, left: 16, right: 16,
     backgroundColor: '#fff', borderRadius: 12, padding: 16, elevation: 4,
@@ -353,7 +347,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center',
   },
   createText: { color: '#fff', fontWeight: '700' },
-
   placeCard: {
     position: 'absolute', bottom: 24, left: 16, right: 16,
     backgroundColor: '#fff', borderRadius: 12, padding: 16, elevation: 4,
@@ -377,7 +370,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center',
   },
   deleteText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-
   markerWrap: { alignItems: 'center' },
   markerBubble: {
     width: 36, height: 36, borderRadius: 18,

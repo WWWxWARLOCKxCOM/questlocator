@@ -134,9 +134,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!user) return;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { doc, onSnapshot } = require('firebase/firestore');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { db } = require('@/config/firebase');
     return onSnapshot(doc(db, 'users', user.uid), (snap: any) => {
       const d = snap.data() ?? {};
@@ -515,6 +513,13 @@ export default function HomeScreen() {
     handleSelectPlace(p);
   };
 
+  const defaultRegion = {
+    latitude: 55.751244,
+    longitude: 37.618423,
+    latitudeDelta: 0.1,
+    longitudeDelta: 0.1,
+  };
+
   const initialRegion = loc
     ? {
         latitude: loc.latitude,
@@ -522,7 +527,7 @@ export default function HomeScreen() {
         latitudeDelta: 0.02,
         longitudeDelta: 0.02,
       }
-    : undefined;
+    : defaultRegion;
 
   const wave1 = pulseRadius * waveScale;
   const wave2 = (pulseRadius + 60) * waveScale;
@@ -540,11 +545,10 @@ export default function HomeScreen() {
         <MapView
           ref={mapRef}
           provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
-          googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
           style={StyleSheet.absoluteFillObject}
           initialRegion={initialRegion}
-          showsUserLocation
-          showsCompass
+          showsUserLocation={Platform.OS !== 'web'}
+          showsCompass={Platform.OS !== 'web'}
           showsMyLocationButton={false}
           onRegionChangeComplete={(r) => setMapDelta(r.latitudeDelta)}
         >
