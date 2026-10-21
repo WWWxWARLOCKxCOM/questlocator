@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView,
-  TextInput, Keyboard, Pressable, Platform,
+  TextInput, Keyboard, Pressable, Platform, Modal, Alert,
 } from 'react-native';
 import Constants from 'expo-constants';
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
@@ -22,6 +22,7 @@ import { subscribeToUserLevels } from '@/services/levelService';
 import {
   subscribeToAllActiveSessions,
   subscribeToUserSessions,
+  startSession, // ДОБАВЛЕНО
 } from '@/services/sessionService';
 import { subscribeToFriendUids } from '@/services/friendsService';
 import { getCurrentPosition } from '@/services/locationService';
@@ -99,6 +100,10 @@ export default function HomeScreen() {
   const waveScale = Math.max(0.3, Math.min(6, mapDelta / BASE_MAP_DELTA));
 
   const [pulseRadius, setPulseRadius] = useState(20);
+
+  // Стейты для ручного ввода кода
+  const [manualModalVisible, setManualModalVisible] = useState(false);
+  const [manualCode, setManualCode] = useState('');
 
   const contentSheetRef = useRef<BottomSheet>(null);
   const placeSheetRef = useRef<BottomSheet>(null);
@@ -204,6 +209,26 @@ export default function HomeScreen() {
   const closePlaceSheet = () => {
     placeSheetRef.current?.close();
     setTimeout(() => setSelectedPlace(null), 250);
+  };
+
+  const handleManualStart = async () => {
+    if (!manualCode.trim() || !loc || !user) return;
+    try {
+      const payload = manualCode.startsWith('quest://') ? manualCode : `quest://place/${manualCode}`;
+      const res = await startSession(payload, loc.latitude, loc.longitude);
+      
+      if (res.ok && res.sessionId) {
+        setManualModalVisible(false);
+        setManualCode('');
+        Alert.alert('Успех', 'Квест начат!', [
+          { text: 'OK', onPress: () => navigation.navigate('ActiveSession') }
+        ]);
+      } else {
+        Alert.alert('Ошибка', 'Не удалось начать квест. Проверьте код и геолокацию.');
+      }
+    } catch (e: any) {
+      Alert.alert('Ошибка', e.message || 'Неверный код');
+    }
   };
 
   const visiblePlaces = useMemo(() => {
@@ -537,7 +562,7 @@ export default function HomeScreen() {
       <AppHeader
         balance={profile.balance}
         avatarUrl={profile.avatarUrl}
-        onBell={() => navigation.navigate('PromoCodes')}
+        onBell={() => navigation.navigate('Notifications')}
         onProfile={() => navigation.navigate('Profile')}
       />
 
@@ -876,25 +901,43 @@ export default function HomeScreen() {
                       <Text style={[styles.questLine, { color: colors.text }]}>
                         🏆 До {selectedQuest.rewardPoints} баллов
                       </Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.startBtn,
-                          { backgroundColor: colors.primary },
-                        ]}
-                        onPress={() => {
-                          closePlaceSheet();
-                          navigation.navigate('QRScanner', {
-                            placeId: selectedPlace.id,
-                            questId: selectedQuest.id,
-                            placeLatitude: selectedPlace.latitude,
-                            placeLongitude: selectedPlace.longitude,
-                          });
-                        }}
-                      >
-                        <Text style={styles.startBtnText}>
-                          Сканировать QR и начать
-                        </Text>
-                      </TouchableOpacity>
+                      
+                      {/* БЛОК С ДВУМЯ КНОПКАМИ */}
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.startBtn,
+                            { flex: 1, backgroundColor: colors.primary, marginTop: 0 },
+                          ]}
+                          onPress={() => {
+                            closePlaceSheet();
+                            navigation.navigate('QRScanner', {
+                              placeId: selectedPlace.id,
+                              questId: selectedQuest.id,
+                              placeLatitude: selectedPlace.latitude,
+                              placeLongitude: selectedPlace.longitude,
+                            });
+                          }}
+                        >
+                          <Text style={styles.startBtnText}>
+                            Сканировать
+                          </Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={[
+                            styles.startBtn,
+                            { flex: 1, backgroundColor: '#3498db', marginTop: 0 },
+                          ]}
+                          onPress={() => {
+                            setManualModalVisible(true);
+                          }}
+                        >
+                          <Text style={styles.startBtnText}>
+                            Ввести код
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </>
                   ) : (
                     <Text style={[styles.sectionEmpty, { color: colors.textMuted }]}>
@@ -907,6 +950,38 @@ export default function HomeScreen() {
           </BottomSheet>
         )}
       </View>
+
+      {/* МОДАЛКА ДЛЯ ВВОДА КОДА */}
+      <Modal visible={manualModalVisible} transparent animationType="fade" onRequestClose={() => setManualModalVisible(false)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Введите код квеста</Text>
+            <TextInput
+              style={[styles.modalInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="Например: quest://place/123"
+              placeholderTextColor={colors.textMuted}
+              value={manualCode}
+              onChangeText={setManualCode}
+              autoCapitalize="none"
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity 
+                style={[styles.startBtn, { flex: 1, backgroundColor: colors.surfaceAlt }]} 
+                onPress={() => { setManualModalVisible(false); setManualCode(''); }}
+              >
+                <Text style={[styles.startBtnText, { color: colors.text }]}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.startBtn, { flex: 1, backgroundColor: colors.primary }]} 
+                onPress={handleManualStart}
+              >
+                <Text style={styles.startBtnText}>Начать</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -914,27 +989,17 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   mapWrap: { flex: 1, position: 'relative' },
-
   markerBubble: {
     width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#fff',
-    elevation: 3,
+    borderWidth: 2, borderColor: '#fff', elevation: 3,
   },
-
   locateBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 44, height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000', shadowOpacity: 0.15,
+    position: 'absolute', top: 16, right: 16, width: 44, height: 44,
+    borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    elevation: 4, shadowColor: '#000', shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 2 }, shadowRadius: 4,
   },
-
   searchBlock: {
     paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -944,7 +1009,6 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 12, height: 42, gap: 8,
   },
   searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-
   suggestionsList: { maxHeight: 180, marginTop: 6 },
   suggestionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -953,7 +1017,6 @@ const styles = StyleSheet.create({
   },
   suggestionName: { fontWeight: '700', fontSize: 14 },
   suggestionAddr: { fontSize: 12, marginTop: 1 },
-
   filtersRow: { gap: 8, paddingVertical: 10, paddingRight: 16 },
   filterPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -961,40 +1024,31 @@ const styles = StyleSheet.create({
     paddingVertical: 6, paddingHorizontal: 12,
   },
   filterPillText: { fontSize: 12, fontWeight: '600' },
-
   listContent: { paddingBottom: 24 },
-
-  sectionBlock: {
-    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
-  },
+  sectionBlock: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 10,
   },
   sectionTitle: { fontSize: 16, fontWeight: '800' },
-
   sectionEmpty: { fontSize: 13, paddingVertical: 4 },
-
   placeCard: {
     width: 160, marginRight: 12, borderRadius: 12, overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth, elevation: 2,
   },
   placeCardImg: {
-    width: '100%', height: 90,
-    alignItems: 'center', justifyContent: 'center',
+    width: '100%', height: 90, alignItems: 'center', justifyContent: 'center',
   },
   placeCardBody: { padding: 10 },
   placeCardName: { fontWeight: '700', fontSize: 13 },
   placeCardMeta: { fontSize: 11, marginTop: 2 },
-
   levelCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderRadius: 12, padding: 12, marginBottom: 8,
     borderWidth: StyleSheet.hairlineWidth,
   },
   levelBadge: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#f1c40f',
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#f1c40f',
     alignItems: 'center', justifyContent: 'center',
   },
   levelBadgeText: { fontWeight: '800', fontSize: 12 },
@@ -1002,7 +1056,6 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 6, borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: '100%' },
   levelProgress: { fontSize: 11, marginTop: 4 },
-
   friendRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderRadius: 12, padding: 10, marginBottom: 6,
@@ -1014,39 +1067,31 @@ const styles = StyleSheet.create({
   },
   friendName: { fontWeight: '700', fontSize: 13 },
   friendMeta: { fontSize: 11, marginTop: 1 },
-
   promoRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderRadius: 12, padding: 12, marginBottom: 6,
     borderWidth: StyleSheet.hairlineWidth,
   },
   promoCode: { flex: 1, fontWeight: '800', letterSpacing: 1, fontSize: 14 },
-
   historyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   historyText: { flex: 1, fontSize: 13 },
   historyDate: { fontSize: 12 },
-
   dragRail: {
     position: 'absolute', right: 8, top: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center', gap: 10, zIndex: 100,
   },
   dragRailDot: {
-    width: 28, height: 28, borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
-    elevation: 2,
+    width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center', elevation: 2,
   },
   dragRailDotText: { fontSize: 12, fontWeight: '700' },
-
   closeBtn: {
     position: 'absolute', top: 8, right: 8, zIndex: 10,
     width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-    elevation: 3,
+    alignItems: 'center', justifyContent: 'center', elevation: 3,
   },
   placeImg: {
-    width: '100%', height: 180,
-    alignItems: 'center', justifyContent: 'center',
+    width: '100%', height: 180, alignItems: 'center', justifyContent: 'center',
   },
   placeBody: { paddingHorizontal: 16, paddingTop: 12 },
   placeCat: { fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
@@ -1057,11 +1102,9 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 12 },
   questLine: { fontSize: 15, marginBottom: 4 },
   startBtn: {
-    marginTop: 16, borderRadius: 10,
-    paddingVertical: 14, alignItems: 'center',
+    borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center'
   },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-
   sessionBadge: {
     position: 'absolute', top: 16, right: 16,
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -1069,4 +1112,8 @@ const styles = StyleSheet.create({
     borderRadius: 22, elevation: 20, zIndex: 9999,
   },
   sessionBadgeText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalCard: { width: '100%', padding: 24, borderRadius: 16, elevation: 5 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 16, textAlign: 'center' },
+  modalInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 15 },
 });

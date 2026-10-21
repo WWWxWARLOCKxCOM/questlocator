@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Image, ScrollView,
-  Linking, Alert, Platform,
+  Linking, Alert, Platform, Modal, TextInput,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -18,6 +18,7 @@ import { getCurrentPosition } from '@/services/locationService';
 import {
   subscribeToAllActiveSessions,
   subscribeToUserSessions,
+  startSession, // ДОБАВЛЕНО
 } from '@/services/sessionService';
 import { subscribeToFriendUids } from '@/services/friendsService';
 import { subscribeToUserLevels } from '@/services/levelService';
@@ -88,6 +89,10 @@ export default function MapScreen() {
   const [mySessions, setMySessions] = useState<QuestSession[]>([]);
   const [friendUids, setFriendUids] = useState<Set<string>>(new Set());
   const [myLevels, setMyLevels] = useState<Record<string, UserLevel>>({});
+
+  // Стейты для ручного ввода кода
+  const [manualModalVisible, setManualModalVisible] = useState(false);
+  const [manualCode, setManualCode] = useState('');
 
   useEffect(() => {
     const unsub1 = subscribeToActivePlaces(setPlaces);
@@ -193,6 +198,26 @@ export default function MapScreen() {
       placeLatitude: selectedPlace.latitude,
       placeLongitude: selectedPlace.longitude,
     });
+  };
+
+  const handleManualStart = async () => {
+    if (!manualCode.trim() || !userLocation || !user) return;
+    try {
+      const payload = manualCode.startsWith('quest://') ? manualCode : `quest://place/${manualCode}`;
+      const res = await startSession(payload, userLocation.latitude, userLocation.longitude);
+      
+      if (res.ok && res.sessionId) {
+        setManualModalVisible(false);
+        setManualCode('');
+        Alert.alert('Успех', 'Квест начат!', [
+          { text: 'OK', onPress: () => navigation.navigate('ActiveSession') }
+        ]);
+      } else {
+        Alert.alert('Ошибка', 'Не удалось начать квест. Проверьте код и геолокацию.');
+      }
+    } catch (e: any) {
+      Alert.alert('Ошибка', e.message || 'Неверный код');
+    }
   };
 
   const openDrawer = () => navigation.dispatch(DrawerActions.openDrawer());
@@ -496,9 +521,22 @@ export default function MapScreen() {
                         У вас уже есть активная сессия в другом месте.
                       </Text>
                     ) : (
-                      <TouchableOpacity style={styles.scanButton} onPress={handleStartScan}>
-                        <Text style={styles.scanButtonText}>Сканировать QR и начать</Text>
-                      </TouchableOpacity>
+                      // БЛОК С ДВУМЯ КНОПКАМИ
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                        <TouchableOpacity
+                          style={[styles.scanButton, { flex: 1, marginTop: 0 }]}
+                          onPress={handleStartScan}
+                        >
+                          <Text style={styles.scanButtonText}>Сканировать</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={[styles.scanButton, { flex: 1, backgroundColor: '#3498db', marginTop: 0 }]}
+                          onPress={() => setManualModalVisible(true)}
+                        >
+                          <Text style={styles.scanButtonText}>Ввести код</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </>
                 ) : (
@@ -509,6 +547,37 @@ export default function MapScreen() {
           </BottomSheetView>
         </BottomSheet>
       )}
+
+      {/* МОДАЛКА ДЛЯ ВВОДА КОДА */}
+      <Modal visible={manualModalVisible} transparent animationType="fade" onRequestClose={() => setManualModalVisible(false)}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Введите код квеста</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Например: quest://place/123"
+              value={manualCode}
+              onChangeText={setManualCode}
+              autoCapitalize="none"
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity 
+                style={[styles.scanButton, { flex: 1, backgroundColor: '#ecf0f1', marginTop: 0 }]} 
+                onPress={() => { setManualModalVisible(false); setManualCode(''); }}
+              >
+                <Text style={[styles.scanButtonText, { color: '#333' }]}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.scanButton, { flex: 1, marginTop: 0 }]} 
+                onPress={handleManualStart}
+              >
+                <Text style={styles.scanButtonText}>Начать</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -622,4 +691,8 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 12, fontWeight: '700', color: '#555' },
   extraWrap: { backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' },
   extraText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalCard: { width: '100%', padding: 24, backgroundColor: '#fff', borderRadius: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 16, textAlign: 'center' },
+  modalInput: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, fontSize: 15 },
 });

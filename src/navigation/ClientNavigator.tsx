@@ -71,17 +71,10 @@ function MainStackNavigator() {
 
 function FriendsStackNavigator() {
   return (
-    <FriendsStack.Navigator>
-      <FriendsStack.Screen
-        name="FriendsList"
-        component={FriendsScreen}
-        options={{ title: 'Друзья' }}
-      />
-      <FriendsStack.Screen
-        name="FriendDetail"
-        component={FriendDetailScreen}
-        options={{ title: 'Профиль друга' }}
-      />
+    // Скрываем внутреннюю шапку, чтобы использовалась шапка Drawer (AppHeader)
+    <FriendsStack.Navigator screenOptions={{ headerShown: false }}>
+      <FriendsStack.Screen name="FriendsList" component={FriendsScreen} />
+      <FriendsStack.Screen name="FriendDetail" component={FriendDetailScreen} />
     </FriendsStack.Navigator>
   );
 }
@@ -110,14 +103,15 @@ export default function ClientNavigator() {
         <Drawer.Screen
           name="FriendsStack"
           component={FriendsStackNavigator}
-          options={{ title: 'Друзья', headerShown: false }}
+          // Включаем шапку (три полоски), т.к. inner Stack её скрывает
+          options={{ title: 'Друзья', headerShown: true }}
         />
         <Drawer.Screen name="Levels" component={LevelsScreen} options={{ title: 'Уровни' }} />
-        <Drawer.Screen name="Shop" component={ShopScreen} options={{ title: 'Промокоды и купоны' }} />
+        <Drawer.Screen name="Shop" component={ShopScreen} options={{ title: 'Магазин' }} />
+        <Drawer.Screen name="PromoCodes" component={PromoCodesScreen} options={{ title: 'Купоны и промокоды' }} />
         <Drawer.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Уведомления' }} />
         <Drawer.Screen name="Profile" component={ProfileScreen} options={{ title: 'Профиль' }} />
         <Drawer.Screen name="History" component={HistoryScreen} options={{ title: 'История' }} />
-        <Drawer.Screen name="PromoCodes" component={PromoCodesScreen} options={{ title: 'Мои промокоды' }} />
         <Drawer.Screen name="Settings" component={SettingsScreen} options={{ title: 'Настройки' }} />
       </Drawer.Navigator>
     </SessionProvider>

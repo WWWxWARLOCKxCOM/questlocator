@@ -1,71 +1,110 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
 import { subscribeToUserSessions } from '@/services/sessionService';
-import { QuestSession } from '@/types';
+import { subscribeToUserCoupons } from '@/services/couponService';
+import { QuestSession, UserCoupon } from '@/types';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
 
-interface EarnedPromocode {
-  sessionId: string;
-  placeId: string;
-  code: string;
-  earnedAt: number;
-}
-
-/**
- * Промокоды пользователя — производятся из завершённых сессий с непустым promocode.
- * Источник — та же коллекция sessions, что и в HistoryScreen, но с фильтром на клиенте.
- */
 export default function PromoCodesScreen() {
   const { user } = useAuth();
-  const [promocodes, setPromocodes] = useState<EarnedPromocode[]>([]);
+  const { colors } = useTheme();
+  const [sessions, setSessions] = useState<QuestSession[]>([]);
+  const [coupons, setCoupons] = useState<UserCoupon[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
 
-    const unsub = subscribeToUserSessions(user.uid, (sessions: QuestSession[]) => {
-      const earned = sessions
-        .filter((s) => s.status === 'completed' && !!s.promocode)
-        .map((s) => ({
-          sessionId: s.id,
-          placeId: s.placeId,
-          code: s.promocode as string,
-          earnedAt: s.endedAt ?? s.startedAt,
-        }))
-        .sort((a, b) => b.earnedAt - a.earnedAt);
-
-      setPromocodes(earned);
+    const unsub1 = subscribeToUserSessions(user.uid, (list) => {
+      setSessions(list);
+      setLoading(false);
     });
+    
+    const unsub2 = subscribeToUserCoupons(user.uid, setCoupons);
 
-    return () => unsub();
+    return () => { unsub1(); unsub2(); };
   }, [user]);
+
+  // Формируем объединенный список
+  const combinedData = React.useMemo(() => {
+    const promoItems = sessions
+      .filter((s) => s.status === 'completed' && !!s.promocode)
+      .map((s) => ({
+        id: `promo-${s.id}`,
+        type: 'promo' as const,
+        title: 'Промокод за квест',
+        code: s.promocode as string,
+        date: s.endedAt ?? s.startedAt,
+        isUsed: false, // Промокоды просто показываем
+      }));
+
+    const couponItems = coupons.map((c) => ({
+      id: `coupon-${c.id}`,
+      type: 'coupon' as const,
+      title: c.title,
+      code: c.code,
+      date: c.createdAt,
+      isUsed: !!c.usedAt,
+    }));
+
+    return [...promoItems, ...couponItems].sort((a, b) => b.date - a.date);
+  }, [sessions, coupons]);
+
+  if (loading) {
+    return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator /></View>;
+  }
 
   return (
     <FlatList
-      data={promocodes}
-      keyExtractor={(item) => item.sessionId}
-      contentContainerStyle={styles.list}
+      data={combinedData}
+      keyExtractor={(item) => item.id}
+      contentContainerStyle={[styles.list, { backgroundColor: colors.background }]}
       renderItem={({ item }) => (
-        <View style={styles.card}>
-          <Text style={styles.code}>{item.code}</Text>
-          <Text style={styles.date}>
-            {new Date(item.earnedAt).toLocaleDateString('ru-RU')}
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <MaterialCommunityIcons 
+              name={item.type === 'promo' ? 'gift' : 'ticket-percent'} 
+              size={24} 
+              color={item.type === 'promo' ? '#f1c40f' : colors.primary} 
+            />
+            <Text style={[styles.title, { color: colors.text, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {item.type === 'coupon' && (
+              <Text style={{ fontSize: 12, color: item.isUsed ? colors.danger : colors.success }}>
+                {item.isUsed ? 'Использован' : 'Активен'}
+              </Text>
+            )}
+          </View>
+          
+          <Text style={[styles.code, { color: item.type === 'promo' ? '#f1c40f' : colors.primary }]}>
+            {item.code}
+          </Text>
+          
+          <Text style={[styles.date, { color: colors.textMuted }]}>
+            {new Date(item.date).toLocaleDateString('ru-RU')}
           </Text>
         </View>
       )}
-      ListEmptyComponent={<Text style={styles.empty}>У вас пока нет промокодов.</Text>}
+      ListEmptyComponent={
+        <Text style={[styles.empty, { color: colors.textMuted }]}>
+          У вас пока нет купонов или промокодов.
+        </Text>
+      }
     />
   );
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, gap: 12 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  list: { padding: 16, gap: 12, flexGrow: 1 },
   card: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1,
   },
+  title: { fontSize: 15, fontWeight: '700' },
   code: { fontSize: 20, fontWeight: '800', letterSpacing: 1 },
-  date: { color: '#666', marginTop: 4 },
-  empty: { textAlign: 'center', marginTop: 40, color: '#999' },
+  date: { marginTop: 4, fontSize: 12 },
+  empty: { textAlign: 'center', marginTop: 40 },
 });
