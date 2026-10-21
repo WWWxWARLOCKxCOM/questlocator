@@ -5,14 +5,14 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // Подменяем карты на веб-версию Google Maps
+    // Подменяем карты на нашу заглушку
     if (moduleName === 'react-native-maps') {
       return {
-        filePath: require.resolve('@teovilla/react-native-web-maps'),
+        filePath: path.resolve(__dirname, 'src/mocks/mock-maps.js'),
         type: 'sourceFile',
       };
     }
-    // Подменяем камеру на безопасную заглушку из папки src
+    // Подменяем камеру на нашу заглушку
     if (moduleName === 'react-native-vision-camera') {
       return {
         filePath: path.resolve(__dirname, 'src/mocks/mock-camera.js'),
