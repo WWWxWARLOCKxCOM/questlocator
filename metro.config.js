@@ -5,17 +5,22 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // Подменяем только карту
+    // Подменяем карты на веб-версию Google Maps
     if (moduleName === 'react-native-maps') {
       return {
         filePath: require.resolve('@teovilla/react-native-web-maps'),
         type: 'sourceFile',
       };
     }
+    // Подменяем камеру на безопасную заглушку из папки src
+    if (moduleName === 'react-native-vision-camera') {
+      return {
+        filePath: path.resolve(__dirname, 'src/mocks/mock-camera.js'),
+        type: 'sourceFile',
+      };
+    }
   }
   
-  // Для всех остальных модулей (включая камеру) используем стандартное разрешение.
-  // Благодаря файлам .web.tsx, камера не попадет в веб-сборку.
   return context.resolveRequest(context, moduleName, platform);
 };
 
