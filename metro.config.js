@@ -3,16 +3,18 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Подменяем нативные модули на пустую заглушку при сборке под веб
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // Список модулей, которые не работают на вебе
-    const unsupportedModules = [
-      'react-native-vision-camera',
-      'react-native-maps', // Дублируем на всякий случай
-    ];
-
-    if (unsupportedModules.includes(moduleName)) {
+    // 1. Подменяем react-native-maps на веб-версию для Google Maps
+    if (moduleName === 'react-native-maps') {
+      return {
+        filePath: require.resolve('@teovilla/react-native-web-maps'),
+        type: 'sourceFile',
+      };
+    }
+    
+    // 2. Камеру подменяем на пустую заглушку (сканер сделаем через .web.tsx)
+    if (moduleName === 'react-native-vision-camera') {
       return {
         filePath: path.resolve(__dirname, 'empty-module.js'),
         type: 'sourceFile',

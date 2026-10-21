@@ -5,6 +5,8 @@ import * as path from 'path';
 
 // ─────────── Проверки на этапе сборки ───────────
 const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
+const mapsWebKey = process.env.GOOGLE_MAPS_WEB_API_KEY; // <-- ДОБАВЛЕНО
+
 if (!mapsKey) {
   // eslint-disable-next-line no-console
   console.warn(
@@ -15,10 +17,16 @@ if (!mapsKey) {
   );
 }
 
+if (!mapsWebKey) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '\n[QuestLocator] ⚠️  GOOGLE_MAPS_WEB_API_KEY не задан.\n' +
+      'Карта в веб-версии будет недоступна.\n' +
+      'Добавьте ключ в .env в корне проекта.\n',
+  );
+}
+
 // google-services.json нужен для нативной интеграции с Firebase
-// (карты, push, аналитика). Если файла нет — не валим сборку,
-// а просто предупреждаем. Файл можно скачать из Firebase Console
-// на вкладке вашего Android-приложения.
 const googleServicesPath = path.resolve(__dirname, 'google-services.json');
 const hasGoogleServices = fs.existsSync(googleServicesPath);
 if (!hasGoogleServices) {
@@ -45,7 +53,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   scheme: 'questlocator',
 
-  // ─────────── НОВОЕ: Настройки для веб-версии ───────────
   web: {
     bundler: 'metro',
     output: 'single',
@@ -72,8 +79,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   android: {
     package: 'com.questlocator.app',
-    // Поле добавляется только если файл реально существует,
-    // иначе prebuild упадёт ещё до генерации APK.
     ...(hasGoogleServices ? { googleServicesFile: './google-services.json' } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
@@ -94,13 +99,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   plugins: [
-    // ВАЖНО: react-native-vision-camera v4 требует minSdkVersion >= 26
-    // (CameraX/Kotlin coroutines). Без этого override при сборке падает
-    // с ошибкой "Manifest merger failed: uses-sdk:minSdkVersion 23 cannot
-    // be smaller than version 26 declared in library
-    // [:react-native-vision-camera]" — сборка APK останавливается ещё до
-    // генерации файла. По умолчанию Expo SDK 51 ставит minSdkVersion=23,
-    // поэтому его нужно поднять явно через expo-build-properties.
     [
       'expo-build-properties',
       {
@@ -136,5 +134,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
     // ─────────── Google Maps ───────────
     GOOGLE_MAPS_API_KEY: mapsKey,
+    GOOGLE_MAPS_WEB_API_KEY: mapsWebKey, // <-- ДОБАВЛЕНО
   },
 });

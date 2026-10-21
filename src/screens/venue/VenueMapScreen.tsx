@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, StyleSheet, Text, TouchableOpacity, Alert,
+  View, StyleSheet, Text, TouchableOpacity, Alert, Platform,
 } from 'react-native';
+import Constants from 'expo-constants';
 import MapView, {
   Marker, PROVIDER_GOOGLE, Circle, MapPressEvent,
 } from 'react-native-maps';
@@ -133,6 +134,7 @@ export default function VenueMapScreen() {
     <View style={styles.container}>
       <MapView
         provider={PROVIDER_GOOGLE}
+        apiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
         showsUserLocation
