@@ -48,7 +48,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // ─────────── НОВОЕ: Настройки для веб-версии ───────────
   web: {
     bundler: 'metro',
-    output: 'static',
+    output: 'single',
   },
 
   ios: {
