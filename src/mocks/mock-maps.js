@@ -1,50 +1,62 @@
 const React = require('react');
-const { View, Text } = require('react-native');
+const { View } = require('react-native');
+const { GoogleMap, LoadScript, Marker: GoogleMarker } = require('@react-google-maps/api');
+const Constants = require('expo-constants');
 
-// Компонент-заглушка, который на вебе будет подгружать настоящую карту
+// Обертка для карты
 const MapView = React.forwardRef((props, ref) => {
-  const { GoogleMap, LoadScript, Marker } = require('@react-google-maps/api');
-  const apiKey = require('expo-constants').expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY || '';
+  const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY || '';
+  
+  // Центрируем карту по initialRegion
+  const center = props.initialRegion 
+    ? { lat: props.initialRegion.latitude, lng: props.initialRegion.longitude } 
+    : { lat: 55.751244, lng: 37.618423 };
 
-  const mapContainerStyle = {
-    width: '100%',
-    height: '100%',
-  };
+  const markers = [];
 
-  const defaultCenter = { lat: 55.751244, lng: 37.618423 };
+  // Магия: мы читаем элементы <Marker>, которые ты передаешь в MapView в своих экранах
+  React.Children.forEach(props.children, (child) => {
+    if (child && child.props && child.props.coordinate) {
+      const { latitude, longitude } = child.props.coordinate;
+      markers.push(
+        React.createElement(GoogleMarker, {
+          key: child.key,
+          position: { lat: latitude, lng: longitude },
+          // Прокидываем клик (например, для открытия карточки заведения)
+          onClick: child.props.onPress
+        })
+      );
+    }
+  });
 
   return React.createElement(
-    LoadScript,
-    { googleMapsApiKey: apiKey },
+    View,
+    { style: props.style },
     React.createElement(
-      GoogleMap,
-      {
-        mapContainerStyle,
-        center: defaultCenter,
-        zoom: 14,
-      },
-      // Пробрасываем маркеры, если они есть
-      React.Children.map(props.children, (child) => {
-        if (React.isValidElement(child) && child.type === Marker) {
-          return child;
-        }
-        return null;
-      })
+      LoadScript,
+      { googleMapsApiKey: apiKey },
+      React.createElement(
+        GoogleMap,
+        { 
+          mapContainerStyle: { width: '100%', height: '100%' }, 
+          center, 
+          zoom: 14,
+          options: { disableDefaultUI: true } // Убираем лишние кнопки Google для чистоты
+        },
+        ...markers
+      )
     )
   );
 });
 
-// Заглушки для всего остального, чтобы не было ошибок
-const Dummy = () => null;
-Dummy.displayName = 'Dummy';
+// Создаем пустые заглушки, чтобы экраны не падали
+const Marker = () => null;
+const Circle = () => null;
 
 module.exports = {
   __esModule: true,
   default: MapView,
-  Marker: Dummy,
-  Circle: Dummy,
-  Polyline: Dummy,
-  Polygon: Dummy,
+  Marker: Marker,
+  Circle: Circle,
   PROVIDER_GOOGLE: 'google',
-  PROVIDER_DEFAULT: 'default',
 };
