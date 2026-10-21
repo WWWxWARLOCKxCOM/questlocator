@@ -5,7 +5,7 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // 1. Подменяем react-native-maps на веб-версию для Google Maps
+    // 1. Подменяем react-native-maps на веб-версию Google Maps
     if (moduleName === 'react-native-maps') {
       return {
         filePath: require.resolve('@teovilla/react-native-web-maps'),
@@ -13,10 +13,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       };
     }
     
-    // 2. Камеру подменяем на пустую заглушку (сканер сделаем через .web.tsx)
+    // 2. Камеру подменяем на правильную React-заглушку (mock-camera.js)
     if (moduleName === 'react-native-vision-camera') {
       return {
-        filePath: path.resolve(__dirname, 'empty-module.js'),
+        filePath: path.resolve(__dirname, 'mock-camera.js'),
         type: 'sourceFile',
       };
     }

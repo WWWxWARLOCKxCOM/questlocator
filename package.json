@@ -9,13 +9,13 @@
     "ios": "expo run:ios",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node react-native-map-web-fix.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
     "@expo/vector-icons": "^14.0.3",
     "@gorhom/bottom-sheet": "^4.6.1",
     "@gorhom/portal": "^1.0.14",
+    "@react-google-maps/api": "^2.20.8",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/bottom-tabs": "^6.5.20",
     "@react-navigation/drawer": "^6.6.15",
