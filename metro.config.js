@@ -5,10 +5,10 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web') {
-    // Подменяем карты на веб-версию
+    // Подменяем карты на нашу безопасную заглушку
     if (moduleName === 'react-native-maps') {
       return {
-        filePath: require.resolve('@teovilla/react-native-web-maps'),
+        filePath: path.resolve(__dirname, 'src/mocks/mock-maps.js'),
         type: 'sourceFile',
       };
     }
