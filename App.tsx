@@ -2,8 +2,6 @@ import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PortalProvider } from '@gorhom/portal';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -16,13 +14,6 @@ import {
   hasChosenTheme,
   markThemeChosen,
 } from './src/services/permissionsService';
-
-// Безопасная обертка для карт (только для веба)
-let MapProvider = ({ children }: any) => children;
-if (Platform.OS === 'web') {
-  const WebMaps = require('@teovilla/react-native-web-maps');
-  MapProvider = WebMaps.MapProvider;
-}
 
 function AppGate() {
   const [checking, setChecking] = useState(true);
@@ -69,16 +60,12 @@ function AppGate() {
 }
 
 export default function App() {
-  const apiKey = Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY || '';
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <PortalProvider>
         <ThemeProvider>
           <AuthProvider>
-            <MapProvider apiKey={apiKey}>
-              <AppGate />
-            </MapProvider>
+            <AppGate />
           </AuthProvider>
         </ThemeProvider>
       </PortalProvider>

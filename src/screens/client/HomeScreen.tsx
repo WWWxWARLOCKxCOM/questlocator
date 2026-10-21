@@ -539,8 +539,8 @@ export default function HomeScreen() {
       <View style={styles.mapWrap}>
         <MapView
           ref={mapRef}
-          provider={PROVIDER_GOOGLE}
-          apiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
+          provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
+          googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
           style={StyleSheet.absoluteFillObject}
           initialRegion={initialRegion}
           showsUserLocation
@@ -566,7 +566,7 @@ export default function HomeScreen() {
             </Marker>
           ))}
 
-          {selectedPlace && (
+          {selectedPlace && Platform.OS !== 'web' && (
             <>
               <Circle
                 center={{

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Image, ScrollView,
-  Linking, Alert,
+  Linking, Alert, Platform,
 } from 'react-native';
+import Constants from 'expo-constants';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Portal } from '@gorhom/portal';
@@ -217,7 +218,8 @@ export default function MapScreen() {
     <View style={styles.container}>
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
+        provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
+        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
         showsUserLocation
@@ -269,7 +271,7 @@ export default function MapScreen() {
                 </View>
               </Marker>
 
-              {selectedPlace?.id === place.id && (
+              {selectedPlace?.id === place.id && Platform.OS !== 'web' && (
                 <Circle
                   center={{ latitude: place.latitude, longitude: place.longitude }}
                   radius={place.radiusMeters ?? 50}
@@ -319,8 +321,6 @@ export default function MapScreen() {
         })}
       </MapView>
 
-      {/* Кнопка-гамбургер — открывает меню. Поиск и фильтры теперь
-          только на главном экране в bottom sheet. */}
       <TouchableOpacity style={styles.hamburger} onPress={openDrawer}>
         <Ionicons name="menu" size={24} color="#000" />
       </TouchableOpacity>

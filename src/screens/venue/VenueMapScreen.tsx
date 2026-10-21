@@ -132,8 +132,8 @@ export default function VenueMapScreen() {
   return (
     <View style={styles.container}>
       <MapView
-        provider={PROVIDER_GOOGLE}
-        apiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
+        provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
+        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
         showsUserLocation
@@ -165,7 +165,7 @@ export default function VenueMapScreen() {
                 </View>
               </View>
             </Marker>
-            {selectedPlace?.id === p.id && (
+            {selectedPlace?.id === p.id && Platform.OS !== 'web' && (
               <Circle
                 center={{ latitude: p.latitude, longitude: p.longitude }}
                 radius={p.radiusMeters ?? 50}
@@ -184,12 +184,14 @@ export default function VenueMapScreen() {
               onDragEnd={handleDragEnd}
               pinColor="#e67e22"
             />
-            <Circle
-              center={newPoint}
-              radius={50}
-              strokeColor="rgba(230,126,34,0.9)"
-              fillColor="rgba(230,126,34,0.15)"
-            />
+            {Platform.OS !== 'web' && (
+              <Circle
+                center={newPoint}
+                radius={50}
+                strokeColor="rgba(230,126,34,0.9)"
+                fillColor="rgba(230,126,34,0.15)"
+              />
+            )}
           </>
         )}
       </MapView>

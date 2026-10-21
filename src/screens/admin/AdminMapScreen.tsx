@@ -40,8 +40,8 @@ export default function AdminMapScreen() {
   return (
     <View style={styles.container}>
       <MapView
-        provider={PROVIDER_GOOGLE}
-        apiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
+        provider={Platform.OS === 'web' ? undefined : PROVIDER_GOOGLE}
+        googleMapsApiKey={Platform.OS === 'web' ? Constants.expoConfig?.extra?.GOOGLE_MAPS_WEB_API_KEY : undefined}
         style={StyleSheet.absoluteFillObject}
         initialRegion={{
           latitude: 55.751244,
@@ -66,7 +66,7 @@ export default function AdminMapScreen() {
                 setSelectedPoint(null);
               }}
             />
-            {selectedPlace?.id === place.id && (
+            {selectedPlace?.id === place.id && Platform.OS !== 'web' && (
               <Circle
                 center={{ latitude: place.latitude, longitude: place.longitude }}
                 radius={place.radiusMeters ?? 50}
@@ -85,12 +85,14 @@ export default function AdminMapScreen() {
               draggable
               onDragEnd={handleMarkerDrag}
             />
-            <Circle
-              center={selectedPoint}
-              radius={50}
-              strokeColor="rgba(230,126,34,0.9)"
-              fillColor="rgba(230,126,34,0.15)"
-            />
+            {Platform.OS !== 'web' && (
+              <Circle
+                center={selectedPoint}
+                radius={50}
+                strokeColor="rgba(230,126,34,0.9)"
+                fillColor="rgba(230,126,34,0.15)"
+              />
+            )}
           </>
         )}
       </MapView>
