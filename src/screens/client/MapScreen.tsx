@@ -241,34 +241,37 @@ export default function MapScreen() {
               <Marker
                 coordinate={{ latitude: place.latitude, longitude: place.longitude }}
                 onPress={() => setSelectedPlace(place)}
+                pinColor={Platform.OS === 'web' ? color : undefined}
               >
-                <View style={styles.markerWrap}>
-                  {showLevel ? (
-                    <View
-                      style={[
-                        styles.levelChip,
-                        displayLevel === 0 && styles.levelChipZero,
-                      ]}
-                    >
-                      <Text style={styles.levelChipText}>Ур. {displayLevel}</Text>
-                    </View>
-                  ) : null}
-                  <View style={[styles.markerBubble, { backgroundColor: color }]}>
-                    <MaterialCommunityIcons
-                      name={CATEGORY_ICONS[place.category]}
-                      size={18}
-                      color="#fff"
-                    />
-                  </View>
-                  <View style={styles.markerLabel}>
-                    <Text style={styles.markerLabelText} numberOfLines={1}>
-                      {place.name}
-                    </Text>
-                    {typeof place.averageCheck === 'number' && place.averageCheck > 0 ? (
-                      <Text style={styles.markerCheckText}>от {place.averageCheck} ₽</Text>
+                {Platform.OS !== 'web' && (
+                  <View style={styles.markerWrap}>
+                    {showLevel ? (
+                      <View
+                        style={[
+                          styles.levelChip,
+                          displayLevel === 0 && styles.levelChipZero,
+                        ]}
+                      >
+                        <Text style={styles.levelChipText}>Ур. {displayLevel}</Text>
+                      </View>
                     ) : null}
+                    <View style={[styles.markerBubble, { backgroundColor: color }]}>
+                      <MaterialCommunityIcons
+                        name={CATEGORY_ICONS[place.category]}
+                        size={18}
+                        color="#fff"
+                      />
+                    </View>
+                    <View style={styles.markerLabel}>
+                      <Text style={styles.markerLabelText} numberOfLines={1}>
+                        {place.name}
+                      </Text>
+                      {typeof place.averageCheck === 'number' && place.averageCheck > 0 ? (
+                        <Text style={styles.markerCheckText}>от {place.averageCheck} ₽</Text>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
+                )}
               </Marker>
 
               {selectedPlace?.id === place.id && Platform.OS !== 'web' && (

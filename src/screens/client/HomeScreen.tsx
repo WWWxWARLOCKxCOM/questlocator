@@ -553,16 +553,19 @@ export default function HomeScreen() {
               key={p.id}
               coordinate={{ latitude: p.latitude, longitude: p.longitude }}
               onPress={() => handleSelectPlace(p)}
+              pinColor={Platform.OS === 'web' ? colors.primary : undefined}
             >
-              <View
-                style={[styles.markerBubble, { backgroundColor: colors.primary }]}
-              >
-                <MaterialCommunityIcons
-                  name={CATEGORY_ICONS[p.category]}
-                  size={16}
-                  color="#fff"
-                />
-              </View>
+              {Platform.OS !== 'web' && (
+                <View
+                  style={[styles.markerBubble, { backgroundColor: colors.primary }]}
+                >
+                  <MaterialCommunityIcons
+                    name={CATEGORY_ICONS[p.category]}
+                    size={16}
+                    color="#fff"
+                  />
+                </View>
+              )}
             </Marker>
           ))}
 

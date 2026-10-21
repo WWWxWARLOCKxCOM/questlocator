@@ -146,24 +146,27 @@ export default function VenueMapScreen() {
               coordinate={{ latitude: p.latitude, longitude: p.longitude }}
               onPress={() => setSelectedPlace(p)}
               tracksViewChanges={false}
+              pinColor={Platform.OS === 'web' ? '#2c3e50' : undefined}
             >
-              <View style={styles.markerWrap}>
-                <View style={styles.markerBubble}>
-                  <MaterialCommunityIcons
-                    name={CATEGORY_ICONS[p.category]}
-                    size={18}
-                    color="#fff"
-                  />
+              {Platform.OS !== 'web' && (
+                <View style={styles.markerWrap}>
+                  <View style={styles.markerBubble}>
+                    <MaterialCommunityIcons
+                      name={CATEGORY_ICONS[p.category]}
+                      size={18}
+                      color="#fff"
+                    />
+                  </View>
+                  <View style={styles.markerLabel}>
+                    <Text style={styles.markerLabelText} numberOfLines={1}>{p.name}</Text>
+                    {isFoodCategory(p.category) &&
+                      typeof p.averageCheck === 'number' &&
+                      p.averageCheck > 0 && (
+                        <Text style={styles.markerCheckText}>от {p.averageCheck} ₽</Text>
+                      )}
+                  </View>
                 </View>
-                <View style={styles.markerLabel}>
-                  <Text style={styles.markerLabelText} numberOfLines={1}>{p.name}</Text>
-                  {isFoodCategory(p.category) &&
-                    typeof p.averageCheck === 'number' &&
-                    p.averageCheck > 0 && (
-                      <Text style={styles.markerCheckText}>от {p.averageCheck} ₽</Text>
-                    )}
-                </View>
-              </View>
+              )}
             </Marker>
             {selectedPlace?.id === p.id && Platform.OS !== 'web' && (
               <Circle
