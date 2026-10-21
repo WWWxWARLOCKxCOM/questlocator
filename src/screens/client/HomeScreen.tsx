@@ -40,9 +40,6 @@ import {
 const MAX_NEARBY_DISTANCE_M = 5000;
 const BASE_MAP_DELTA = 0.008;
 
-// Модульный флаг: сохраняется между навигацией внутри сессии,
-// сбрасывается при перезапуске приложения — то, что нужно для
-// "центрироваться, только если приложение было закрыто".
 let hasCenteredThisSession = false;
 
 const CATEGORY_ICONS: Record<PlaceCategory, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -98,7 +95,6 @@ export default function HomeScreen() {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [headerH, setHeaderH] = useState(140);
 
-  // Зум карты — для масштабирования волн
   const [mapDelta, setMapDelta] = useState(BASE_MAP_DELTA);
   const waveScale = Math.max(0.3, Math.min(6, mapDelta / BASE_MAP_DELTA));
 
@@ -114,7 +110,6 @@ export default function HomeScreen() {
   );
   const placeSnapPoints = useMemo(() => ['50%', '90%'], []);
 
-  // ─── Подписки ───
   useEffect(() => {
     const u1 = subscribeToActivePlaces(setPlaces);
     const u2 = subscribeToAllActiveSessions(setSessions);
@@ -149,12 +144,10 @@ export default function HomeScreen() {
     });
   }, [user]);
 
-  // ─── Центрирование на пользователе при холодном старте ───
   useEffect(() => {
     if (!loc) return;
     if (hasCenteredThisSession) return;
     hasCenteredThisSession = true;
-    // Небольшая задержка, чтобы карта успела отрендериться
     const t = setTimeout(() => {
       mapRef.current?.animateToRegion(
         {
@@ -181,7 +174,6 @@ export default function HomeScreen() {
     loadSectionsOrder().then(setOrder);
   }, []);
 
-  // Пульсация
   useEffect(() => {
     if (!selectedPlace) {
       setPulseRadius(20);
@@ -280,7 +272,6 @@ export default function HomeScreen() {
 
   const recentHistory = useMemo(() => mySessions.slice(0, 5), [mySessions]);
 
-  // ─── Секция: теперь перетаскивается за любое место ───
   const renderSection = ({ item, drag, isActive }: RenderItemParams<SectionId>) => (
     <ScaleDecorator>
       <Pressable
@@ -533,7 +524,6 @@ export default function HomeScreen() {
       }
     : undefined;
 
-  // Радиусы волн с учётом зума
   const wave1 = pulseRadius * waveScale;
   const wave2 = (pulseRadius + 60) * waveScale;
 
@@ -602,7 +592,6 @@ export default function HomeScreen() {
           )}
         </MapView>
 
-        {/* Кнопка центрирования на пользователе */}
         <TouchableOpacity
           style={[styles.locateBtn, { backgroundColor: colors.surface }]}
           onPress={() => {

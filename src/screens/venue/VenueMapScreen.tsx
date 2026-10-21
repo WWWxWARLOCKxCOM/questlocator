@@ -73,7 +73,6 @@ export default function VenueMapScreen() {
     };
   }, [places]);
 
-  // Базовый лимит 2 (чтобы не было 0/0, если база не вернула данные)
   const pointsLimit = venue?.pointsLimit ?? 2;
   const couponsLimit = venue?.couponsLimit ?? 2;
   const canCreateMore = (venue?.pointsUsed ?? 0) < pointsLimit;
@@ -195,7 +194,6 @@ export default function VenueMapScreen() {
         )}
       </MapView>
 
-      {/* HEADER — меню + баллы по центру + лимиты справа */}
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.hamburger}
@@ -295,7 +293,7 @@ const styles = StyleSheet.create({
 
   topBar: {
     position: 'absolute', 
-    top: 40, // Увеличен отступ, чтобы не наезжать на статус-бар
+    top: 40, 
     left: 16, 
     right: 16,
     flexDirection: 'row', 
