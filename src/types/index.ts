@@ -263,6 +263,22 @@ export interface Notification {
   createdAt: number;
 }
 
+// ═══════════════════════════════════════════
+//  МЕРОПРИЯТИЯ (СОБЫТИЯ)
+// ═══════════════════════════════════════════
+export interface Event {
+  id: string;
+  venueUid: string;
+  placeIds: string[];
+  title: string;
+  description: string;
+  linkUrl?: string;
+  startTime: number; // ms
+  endTime: number;   // ms
+  status: 'upcoming' | 'active' | 'archived';
+  createdAt: number;
+}
+
 export const CATEGORY_LABELS: Record<PlaceCategory, string> = {
   restaurant: 'Ресторан',
   cafe: 'Кафе',

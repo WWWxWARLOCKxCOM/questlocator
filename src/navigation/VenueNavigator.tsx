@@ -18,21 +18,25 @@ import VenueCreateCouponScreen from '@/screens/venue/VenueCreateCouponScreen';
 import VenueCouponScannerScreen from '@/screens/venue/VenueCouponScannerScreen';
 import VenueCouponHistoryScreen from '@/screens/venue/VenueCouponHistoryScreen';
 import VenueFinanceScreen from '@/screens/venue/VenueFinanceScreen';
+import VenueEventsScreen from '@/screens/venue/VenueEventsScreen'; // <-- ДОБАВЛЕНО
+import VenueCreateEventScreen from '@/screens/venue/VenueCreateEventScreen'; // <-- ДОБАВЛЕНО
 import CustomVenueDrawer from './CustomVenueDrawer';
 
 export type VenueStackParamList = {
   VenueMap: { focusPlaceId?: string } | undefined;
-  VenueAddPlace: { latitude: number; longitude: number; address?: string }; // <-- ДОБАВЛЕНО address
+  VenueAddPlace: { latitude: number; longitude: number; address?: string };
   VenueEditPlace: { placeId: string };
   VenueCreateCoupon: undefined;
   VenueCouponScanner: undefined;
   VenueCouponHistory: undefined;
+  VenueCreateEvent: undefined; // <-- ДОБАВЛЕНО
 };
 
 export type VenueDrawerParamList = {
   VenueMainStack: undefined;
   VenuePlaces: undefined;
   VenueShop: undefined;
+  VenueEvents: undefined; // <-- ДОБАВЛЕНО
   VenueFinance: undefined;
   VenueScanner: undefined;
   VenueHistory: undefined;
@@ -52,6 +56,7 @@ function VenueMainStack() {
       <Stack.Screen name="VenueEditPlace" component={VenueEditPlaceScreen} options={{ title: 'Редактировать точку', headerShown: true }} />
       <Stack.Screen name="VenueCreateCoupon" component={VenueCreateCouponScreen} options={{ title: 'Новый купон', headerShown: true }} />
       <Stack.Screen name="VenueCouponScanner" component={VenueCouponScannerScreen} options={{ title: 'Сканер купонов', headerShown: true }} />
+      <Stack.Screen name="VenueCreateEvent" component={VenueCreateEventScreen} options={{ title: 'Новое мероприятие', headerShown: true }} /> {/* <-- ДОБАВЛЕНО */}
     </Stack.Navigator>
   );
 }
@@ -92,6 +97,7 @@ export default function VenueNavigator() {
       />
       <Drawer.Screen name="VenuePlaces" component={VenuePlacesScreen} options={{ title: 'Управление точками' }} />
       <Drawer.Screen name="VenueShop" component={VenueShopScreen} options={{ title: 'Купоны и промокоды' }} />
+      <Drawer.Screen name="VenueEvents" component={VenueEventsScreen} options={{ title: 'Мероприятия' }} /> {/* <-- ДОБАВЛЕНО */}
       <Drawer.Screen name="VenueFinance" component={VenueFinanceScreen} options={{ title: 'Финансы' }} />
       <Drawer.Screen name="VenueScanner" component={VenueCouponScannerScreen} options={{ title: 'Сканировать купон' }} />
       <Drawer.Screen name="VenueHistory" component={VenueCouponHistoryScreen} options={{ title: 'Погашенные купоны' }} />

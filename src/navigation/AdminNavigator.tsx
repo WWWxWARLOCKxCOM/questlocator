@@ -14,7 +14,7 @@ import AdminVenueDetailScreen from '@/screens/admin/AdminVenueDetailScreen';
 import AdminDashboardScreen from '@/screens/admin/AdminDashboardScreen';
 import AdminUsersScreen from '@/screens/admin/AdminUsersScreen';
 import AdminVenuesScreen from '@/screens/admin/AdminVenuesScreen';
-import AdminVenueApplicationsScreen from '@/screens/admin/AdminVenueApplicationsScreen'; // <-- НОВЫЙ ИМПОРТ
+import AdminVenueApplicationsScreen from '@/screens/admin/AdminVenueApplicationsScreen';
 import PhotoModerationScreen from '@/screens/admin/PhotoModerationScreen';
 import AdminShopScreen from '@/screens/admin/AdminShopScreen';
 import AdminCreateCouponScreen from '@/screens/admin/AdminCreateCouponScreen';
@@ -31,7 +31,7 @@ export type AdminStackParamList = {
 export type AdminDrawerParamList = {
   MainStack: undefined;
   Stats: undefined;
-  Applications: undefined; // <-- НОВЫЙ РОУТ
+  Applications: undefined;
   Venues: undefined;
   Users: undefined;
   Moderation: undefined;
@@ -74,7 +74,7 @@ export default function AdminNavigator() {
     >
       <Drawer.Screen name="MainStack" component={AdminMainStack} options={{ title: 'Карта', headerShown: false }} />
       <Drawer.Screen name="Stats" component={AdminDashboardScreen} options={{ title: 'Статистика' }} />
-      <Drawer.Screen name="Applications" component={AdminVenueApplicationsScreen} options={{ title: 'Заявки компаний' }} /> {/* <-- НОВЫЙ ЭКРАН */}
+      <Drawer.Screen name="Applications" component={AdminVenueApplicationsScreen} options={{ title: 'Заявки компаний' }} />
       <Drawer.Screen name="Venues" component={AdminVenuesScreen} options={{ title: 'Заведения' }} />
       <Drawer.Screen name="Users" component={AdminUsersScreen} options={{ title: 'Пользователи' }} />
       <Drawer.Screen name="Moderation" component={PhotoModerationScreen} options={{ title: 'Модерация' }} />

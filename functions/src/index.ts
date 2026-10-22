@@ -300,6 +300,7 @@ export const deleteVenueAccount = onCall(async (req) => {
   const levelDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const couponDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const txDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  const eventDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   const CHUNK = 10;
   
   for (let i = 0; i < placeIds.length; i += CHUNK) {
@@ -314,12 +315,14 @@ export const deleteVenueAccount = onCall(async (req) => {
     levelDocs.push(...lvSnap.docs);
   }
 
-  const [cSnap, tSnap] = await Promise.all([
+  const [cSnap, tSnap, eSnap] = await Promise.all([
     db.collection('coupons').where('ownerUid', '==', venueUid).get(),
-    db.collection('venue_transactions').where('venueUid', '==', venueUid).get()
+    db.collection('venue_transactions').where('venueUid', '==', venueUid).get(),
+    db.collection('events').where('venueUid', '==', venueUid).get(),
   ]);
   couponDocs.push(...cSnap.docs);
   txDocs.push(...tSnap.docs);
+  eventDocs.push(...eSnap.docs);
 
   const allRefs: FirebaseFirestore.DocumentReference[] = [
     ...placesSnap.docs.map((d) => d.ref),
@@ -328,6 +331,7 @@ export const deleteVenueAccount = onCall(async (req) => {
     ...levelDocs.map((d) => d.ref),
     ...couponDocs.map((d) => d.ref),
     ...txDocs.map((d) => d.ref),
+    ...eventDocs.map((d) => d.ref),
     db.collection('venues').doc(venueUid),
   ];
 
@@ -2172,3 +2176,85 @@ export const rejectVenueApplication = onCall(async (req) => {
 
   return { ok: true };
 });
+
+// ═══════════════════════════════════════════
+//  МЕРОПРИЯТИЯ (EVENTS)
+// ═══════════════════════════════════════════
+export const createEvent = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  const isVenue = req.auth.token.venue === true;
+  if (!isVenue) throw new HttpsError('permission-denied', 'Только заведение');
+
+  const { placeIds, title, description, linkUrl, startTime, endTime } = req.data;
+  
+  if (!placeIds || !placeIds.length || !title || !startTime || !endTime) {
+    throw new HttpsError('invalid-argument', 'Заполните обязательные поля');
+  }
+
+  const venueSnap = await db.collection('venues').doc(req.auth.uid).get();
+  if (!venueSnap.exists) throw new HttpsError('permission-denied', 'Аккаунт не найден');
+  if (venueSnap.data()?.isActive === false) {
+    throw new HttpsError('permission-denied', 'Аккаунт на модерации');
+  }
+
+  const ref = await db.collection('events').add({
+    venueUid: req.auth.uid,
+    placeIds,
+    title,
+    description: description || '',
+    linkUrl: linkUrl || null,
+    startTime,
+    endTime,
+    status: 'upcoming',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true, eventId: ref.id };
+});
+
+export const deleteEvent = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  const isVenue = req.auth.token.venue === true;
+  if (!isVenue) throw new HttpsError('permission-denied', 'Только заведение');
+
+  const { eventId } = req.data;
+  const eventRef = db.collection('events').doc(eventId);
+  const snap = await eventRef.get();
+  
+  if (!snap.exists) throw new HttpsError('not-found', 'Мероприятие не найдено');
+  if (snap.data()?.venueUid !== req.auth.uid) {
+    throw new HttpsError('permission-denied', 'Это не ваше мероприятие');
+  }
+
+  await eventRef.delete();
+  return { ok: true };
+});
+
+// Автоматическая архивация прошедших мероприятий (каждый час)
+export const archiveOldEvents = onSchedule(
+  { schedule: 'every 1 hours', timeZone: 'Europe/Moscow' },
+  async () => {
+    const now = Date.now();
+    const snap = await db.collection('events').where('status', 'in', ['upcoming', 'active']).get();
+    
+    const batch = db.batch();
+    let count = 0;
+    
+    snap.forEach((d) => {
+      const data = d.data();
+      if (data.endTime < now) {
+        batch.update(d.ref, { 
+          status: 'archived',
+          // Очищаем лишнее, чтобы не засорять базу, оставляем только метаданные
+          placeIds: [], 
+          linkUrl: admin.firestore.FieldValue.delete()
+        });
+        count++;
+      } else if (data.startTime <= now && data.status === 'upcoming') {
+        batch.update(d.ref, { status: 'active' });
+      }
+    });
+
+    if (count > 0) await batch.commit();
+  }
+);

@@ -7,9 +7,11 @@ export type SectionId =
   | 'levels'
   | 'friends'
   | 'promo'
-  | 'history';
+  | 'history'
+  | 'events'; // <-- ДОБАВЛЕНО
 
 export const DEFAULT_ORDER: SectionId[] = [
+  'events', // <-- ДОБАВЛЕНО (ставим в начало, чтобы сразу видели)
   'nearby',
   'levels',
   'friends',

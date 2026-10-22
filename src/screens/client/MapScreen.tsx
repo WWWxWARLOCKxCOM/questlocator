@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View, StyleSheet, Text, TouchableOpacity, Image, ScrollView,
-  Linking, Alert, Platform, Modal, TextInput,
+  Linking, Alert, Platform, Modal, TextInput, Animated, Easing,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
@@ -18,15 +18,16 @@ import { getCurrentPosition } from '@/services/locationService';
 import {
   subscribeToAllActiveSessions,
   subscribeToUserSessions,
-  startSession, // ДОБАВЛЕНО
+  startSession,
 } from '@/services/sessionService';
 import { subscribeToFriendUids } from '@/services/friendsService';
 import { subscribeToUserLevels } from '@/services/levelService';
+import { subscribeToEventsForPlace, subscribeToRelevantEvents } from '@/services/eventService'; // <-- ДОБАВЛЕНО
 import { useSession } from '@/context/SessionContext';
 import { useAuth } from '@/context/AuthContext';
 import {
   Place, Quest, PinStatus, GeoPoint, QuestSession, PlaceCategory,
-  UserLevel, CATEGORY_LABELS,
+  UserLevel, CATEGORY_LABELS, Event, // <-- ДОБАВЛЕНО
 } from '@/types';
 
 type Nav = NativeStackNavigationProp<ClientStackParamList>;
@@ -73,6 +74,30 @@ async function callPhone(phone: string) {
   }
 }
 
+// ═══ КОМПОНЕНТ ФЕЙЕРВЕРКА ═══
+function EventFirework() {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 800, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 800, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+  }, [anim]);
+
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.5] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+
+  return (
+    <Animated.View style={{ position: 'absolute', top: -40, left: -20, transform: [{ scale }], opacity }}>
+      <Text style={{ fontSize: 36 }}>🎆</Text>
+    </Animated.View>
+  );
+}
+// ═══════════════════════════════════════════
+
 export default function MapScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
@@ -90,6 +115,10 @@ export default function MapScreen() {
   const [friendUids, setFriendUids] = useState<Set<string>>(new Set());
   const [myLevels, setMyLevels] = useState<Record<string, UserLevel>>({});
 
+  // Стейты для мероприятий
+  const [placeEvents, setPlaceEvents] = useState<Event[]>([]);
+  const [activeEvents, setActiveEvents] = useState<Event[]>([]);
+
   // Стейты для ручного ввода кода
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualCode, setManualCode] = useState('');
@@ -98,7 +127,11 @@ export default function MapScreen() {
     const unsub1 = subscribeToActivePlaces(setPlaces);
     const unsub2 = subscribeToAllActiveSessions(setActiveSessions);
     getCurrentPosition().then(setUserLocation).catch(() => {});
-    return () => { unsub1(); unsub2(); };
+    
+    // Подписка на активные события для анимации
+    const unsub3 = subscribeToRelevantEvents((evs) => setActiveEvents(evs.filter(e => e.status === 'active')));
+    
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
 
   useEffect(() => {
@@ -114,8 +147,10 @@ export default function MapScreen() {
   }, [user]);
 
   useEffect(() => {
-    if (!selectedPlace) { setSelectedQuest(null); return; }
-    return subscribeToActiveQuestForPlace(selectedPlace.id, setSelectedQuest);
+    if (!selectedPlace) { setSelectedQuest(null); setPlaceEvents([]); return; }
+    const u1 = subscribeToActiveQuestForPlace(selectedPlace.id, setSelectedQuest);
+    const u2 = subscribeToEventsForPlace(selectedPlace.id, setPlaceEvents);
+    return () => { u1(); u2(); };
   }, [selectedPlace]);
 
   useEffect(() => {
@@ -265,6 +300,8 @@ export default function MapScreen() {
           const showLevel = !!place.levels && place.levels.enabled === true;
           const userLvl = myLevels[place.id];
           const displayLevel = userLvl?.level ?? 0;
+          
+          const hasActiveEvent = activeEvents.some(e => e.placeIds.includes(place.id));
 
           return (
             <React.Fragment key={place.id}>
@@ -311,6 +348,16 @@ export default function MapScreen() {
                   strokeColor={`${color}CC`}
                   fillColor={`${color}26`}
                 />
+              )}
+
+              {/* АНИМАЦИЯ МЕРОПРИЯТИЯ */}
+              {hasActiveEvent && (
+                <Marker
+                  coordinate={{ latitude: place.latitude, longitude: place.longitude }}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  {Platform.OS !== 'web' ? <EventFirework /> : <Text style={{ fontSize: 24 }}>🎆</Text>}
+                </Marker>
               )}
 
               {sessions.length > 0 && Platform.OS !== 'web' && (
@@ -404,6 +451,27 @@ export default function MapScreen() {
                 </Text>
                 <Text style={styles.placeName}>{selectedPlace.name}</Text>
                 <Text style={styles.placeAddress}>{selectedPlace.address}</Text>
+
+                {/* ИНФО О МЕРОПРИЯТИИ */}
+                {placeEvents.length > 0 && (
+                  <View style={{ marginTop: 12, padding: 12, backgroundColor: '#fffbea', borderRadius: 10, borderWidth: 1, borderColor: '#f1c40f' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#d35400' }}>🎉 Мероприятие</Text>
+                    {placeEvents.map(ev => (
+                      <View key={ev.id} style={{ marginTop: 8 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#333' }}>{ev.title}</Text>
+                        <Text style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{ev.description}</Text>
+                        <Text style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                          {new Date(ev.startTime).toLocaleString('ru-RU')} — {new Date(ev.endTime).toLocaleString('ru-RU')}
+                        </Text>
+                        {ev.linkUrl ? (
+                          <TouchableOpacity onPress={() => openUrl(ev.linkUrl!)} style={{ marginTop: 6 }}>
+                            <Text style={{ color: '#3498db', fontWeight: '600' }}>Подробнее / Ссылка</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {selectedLevelBlock ? (
                   <View style={styles.levelBlock}>

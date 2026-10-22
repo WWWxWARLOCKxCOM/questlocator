@@ -33,6 +33,9 @@ function fromDoc(id: string, d: any): VenueAccount {
 export function subscribeToVenue(uid: string, cb: (venue: VenueAccount | null) => void) {
   return onSnapshot(doc(db, VENUES_COL, uid), (snap) => {
     cb(snap.exists() ? fromDoc(snap.id, snap.data()) : null);
+  }, (err) => {
+    console.warn('[venueService] venue error:', err.message);
+    cb(null);
   });
 }
 
@@ -41,11 +44,13 @@ export function subscribeToAllVenues(cb: (venues: VenueAccount[]) => void) {
   return onSnapshot(
     q,
     (snap) => cb(snap.docs.map((d) => fromDoc(d.id, d.data()))),
-    () => cb([]),
+    (err) => {
+      console.warn('[venueService] all venues error:', err.message);
+      cb([]);
+    }
   );
 }
 
-/** Фото на модерации, привязанные к заведению (серверная фильтрация). */
 export function subscribeToVenuePhotos(
   venueUid: string,
   cb: (photos: QuestPhoto[]) => void,
@@ -75,7 +80,6 @@ export function subscribeToVenuePhotos(
       cb(list);
     },
     (err) => {
-      // eslint-disable-next-line no-console
       console.warn('[venueService] photos error:', err.message);
       cb([]);
     },
@@ -152,7 +156,6 @@ export function subscribeToVenueTransactions(
       cb(list);
     },
     (err) => {
-      // eslint-disable-next-line no-console
       console.warn('[venueService] transactions error:', err.message);
       cb([]);
     },
@@ -173,12 +176,20 @@ export function subscribeToVenueApplications(cb: (apps: VenueApplication[]) => v
     where('status', '==', 'pending'), 
     orderBy('createdAt', 'desc')
   );
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map(d => ({ 
-      ...d.data(), 
-      createdAt: d.data().createdAt?.toMillis?.() ?? 0 
-    } as VenueApplication)));
-  });
+  return onSnapshot(
+    q, 
+    (snap) => {
+      cb(snap.docs.map(d => ({ 
+        ...d.data(), 
+        createdAt: d.data().createdAt?.toMillis?.() ?? 0 
+      } as VenueApplication)));
+    },
+    (err) => {
+      // ЗАЩИТА ОТ ПАДЕНИЯ
+      console.warn('[venueService] applications error:', err.message);
+      cb([]); 
+    }
+  );
 }
 
 export async function approveVenueApplication(applicationId: string) {

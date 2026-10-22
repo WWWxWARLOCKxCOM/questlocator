@@ -28,6 +28,7 @@ import {
 import { subscribeToFriendUids } from '@/services/friendsService';
 import { getCurrentPosition } from '@/services/locationService';
 import { distanceInMeters } from '@/utils/distance';
+import { subscribeToRelevantEvents } from '@/services/eventService'; // <-- ДОБАВЛЕНО
 import {
   loadSectionsOrder,
   saveSectionsOrder,
@@ -35,7 +36,7 @@ import {
 } from '@/services/sectionsOrderService';
 import AppHeader from '@/components/AppHeader';
 import {
-  Place, Quest, PlaceCategory, UserLevel, QuestSession, GeoPoint,
+  Place, Quest, PlaceCategory, UserLevel, QuestSession, GeoPoint, Event, // <-- ДОБАВЛЕНО Event
   CATEGORY_LABELS, ALL_CATEGORIES,
 } from '@/types';
 
@@ -53,6 +54,7 @@ const CATEGORY_ICONS: Record<PlaceCategory, keyof typeof MaterialCommunityIcons.
 type Nav = any;
 
 const SECTION_TITLES: Record<SectionId, string> = {
+  events: 'Актуальные мероприятия', // <-- ДОБАВЛЕНО
   nearby: 'Рядом с вами',
   levels: 'Ваши уровни',
   friends: 'Друзья сейчас на квесте',
@@ -77,6 +79,7 @@ export default function HomeScreen() {
   const [mySessions, setMySessions] = useState<QuestSession[]>([]);
   const [friendUids, setFriendUids] = useState<Set<string>>(new Set());
   const [loc, setLoc] = useState<GeoPoint | null>(null);
+  const [events, setEvents] = useState<Event[]>([]); // <-- ДОБАВЛЕНО
   const [profile, setProfile] = useState<{ balance: number; avatarUrl: string | null }>({
     balance: 0,
     avatarUrl: null,
@@ -118,10 +121,12 @@ export default function HomeScreen() {
   useEffect(() => {
     const u1 = subscribeToActivePlaces(setPlaces);
     const u2 = subscribeToAllActiveSessions(setSessions);
+    const u3 = subscribeToRelevantEvents(setEvents); // <-- ДОБАВЛЕНО
     getCurrentPosition().then(setLoc).catch(() => {});
     return () => {
       u1();
       u2();
+      u3();
     };
   }, []);
 
@@ -320,6 +325,42 @@ export default function HomeScreen() {
 
   const renderSectionContent = (id: SectionId) => {
     switch (id) {
+      case 'events': {
+        const relevant = events.filter(e => e.status !== 'archived').slice(0, 5);
+        if (relevant.length === 0) {
+          return (
+            <Text style={[styles.sectionEmpty, { color: colors.textMuted }]}>
+              Пока нет предстоящих мероприятий
+            </Text>
+          );
+        }
+        return relevant.map((e) => {
+          const place = places.find(p => p.id === e.placeIds[0]);
+          return (
+            <TouchableOpacity
+              key={e.id}
+              style={[styles.promoRow, { backgroundColor: colors.cardBg, borderColor: colors.border, borderLeftWidth: 4, borderLeftColor: e.status === 'active' ? colors.success : colors.warning }]}
+              onPress={() => {
+                if (place) {
+                  handleSelectPlace(place);
+                }
+              }}
+            >
+              <MaterialCommunityIcons name="party-popper" size={24} color={e.status === 'active' ? colors.success : colors.warning} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.promoCode, { color: colors.text }]} numberOfLines={1}>
+                  {e.title}
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                  {place ? `в «${place.name}»` : 'Мероприятие'} · {e.status === 'active' ? 'Идёт сейчас' : new Date(e.startTime).toLocaleDateString('ru-RU')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          );
+        });
+      }
+
       case 'nearby': {
         if (nearby.length === 0) {
           return (
