@@ -22,11 +22,14 @@ const RADIUS_PRESETS = [25, 50, 100, 200];
 export default function VenueAddPlaceScreen() {
   const navigation = useNavigation();
   const route = useRoute<Rt>();
-  const { latitude, longitude } = route.params;
+  
+  // Извлекаем address из параметров (передается с карты)
+  const { latitude, longitude, address: initialAddress } = route.params;
 
   // Заведение
   const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
+  // Инициализируем сразу переданным адресом
+  const [address, setAddress] = useState(initialAddress || '');
   const [description, setDescription] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [category, setCategory] = useState<PlaceCategory>('cafe');
@@ -55,6 +58,9 @@ export default function VenueAddPlaceScreen() {
   const isFood = category === 'cafe' || category === 'restaurant';
 
   useEffect(() => {
+    // Если адрес уже передан с карты — не делаем лишний запрос
+    if (initialAddress) return;
+
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -69,7 +75,7 @@ export default function VenueAddPlaceScreen() {
         // адрес можно ввести вручную
       }
     })();
-  }, [latitude, longitude]);
+  }, [latitude, longitude, initialAddress]);
 
   const handlePickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -94,7 +100,6 @@ export default function VenueAddPlaceScreen() {
     if (pts < 0) return Alert.alert('Некорректные баллы');
     if (mult < 1) return Alert.alert('Множитель ≥ 1');
 
-    // Проверка заданий
     for (const t of tasks) {
       if (!t.title.trim()) {
         return Alert.alert('Задание без заголовка', 'Заполните заголовок у всех заданий');
@@ -107,7 +112,6 @@ export default function VenueAddPlaceScreen() {
       }
     }
 
-    // Проверка уровней
     if (levels.enabled) {
       if (levels.completionsPerLevel < 1) {
         return Alert.alert('Ошибка', 'Прохождений на уровень должно быть ≥ 1');
@@ -136,7 +140,7 @@ export default function VenueAddPlaceScreen() {
         category,
         radiusMeters: radius,
         isActive: true,
-        levels,                          // ← передаём уровни
+        levels,
       });
 
       await createQuest({
@@ -320,10 +324,7 @@ export default function VenueAddPlaceScreen() {
         <Text>Фото обязательно для зачёта квеста</Text>
       </TouchableOpacity>
 
-      {/* ─── Конструктор заданий ─── */}
       <TaskConstructor tasks={tasks} onChange={setTasks} />
-
-      {/* ─── Конструктор уровней ─── */}
       <LevelConstructor value={levels} onChange={setLevels} />
 
       <TouchableOpacity

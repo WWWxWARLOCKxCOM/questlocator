@@ -6,6 +6,7 @@ import { useTheme } from '@/context/ThemeContext';
 import EmailAuthScreen from '@/screens/auth/EmailAuthScreen';
 import AdminGateScreen from '@/screens/auth/AdminGateScreen';
 import VenueAuthScreen from '@/screens/auth/VenueAuthScreen';
+import VenueRegisterScreen from '@/screens/auth/VenueRegisterScreen'; // <-- ДОБАВЛЕНО
 import ClientNavigator from '@/navigation/ClientNavigator';
 import AdminNavigator from '@/navigation/AdminNavigator';
 import VenueNavigator from '@/navigation/VenueNavigator';
@@ -15,6 +16,7 @@ export type RootStackParamList = {
   EmailAuth: undefined;
   AdminGate: undefined;
   VenueAuth: undefined;
+  VenueRegister: undefined; // <-- ДОБАВЛЕНО
   Client: undefined;
   Admin: undefined;
   Venue: undefined;
@@ -60,6 +62,7 @@ export default function RootNavigator() {
             <Stack.Screen name="EmailAuth" component={EmailAuthScreen} />
             <Stack.Screen name="AdminGate" component={AdminGateScreen} />
             <Stack.Screen name="VenueAuth" component={VenueAuthScreen} />
+            <Stack.Screen name="VenueRegister" component={VenueRegisterScreen} /> {/* <-- ДОБАВЛЕНО */}
           </>
         ) : isAdmin ? (
           <Stack.Screen name="Admin" component={AdminNavigator} />

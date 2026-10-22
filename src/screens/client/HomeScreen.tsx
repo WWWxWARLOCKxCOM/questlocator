@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView,
   TextInput, Keyboard, Pressable, Platform, Modal, Alert,
 } from 'react-native';
-import Constants from 'expo-constants';
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Portal } from '@gorhom/portal';
@@ -108,7 +107,6 @@ export default function HomeScreen() {
   const placeSheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
 
-  // центрирование карты на геопозиции — только один раз за сессию компонента
   const hasCenteredRef = useRef(false);
 
   const contentSnapPoints = useMemo(
@@ -577,26 +575,37 @@ export default function HomeScreen() {
           showsMyLocationButton={false}
           onRegionChangeComplete={(r) => setMapDelta(r.latitudeDelta)}
         >
-          {visiblePlaces.map((p) => (
-            <Marker
-              key={p.id}
-              coordinate={{ latitude: p.latitude, longitude: p.longitude }}
-              onPress={() => handleSelectPlace(p)}
-              pinColor={Platform.OS === 'web' ? colors.primary : undefined}
-            >
-              {Platform.OS !== 'web' && (
-                <View
-                  style={[styles.markerBubble, { backgroundColor: colors.primary }]}
-                >
-                  <MaterialCommunityIcons
-                    name={CATEGORY_ICONS[p.category]}
-                    size={16}
-                    color="#fff"
-                  />
-                </View>
-              )}
-            </Marker>
-          ))}
+          {visiblePlaces.map((p) => {
+            const showLevel = !!p.levels && p.levels.enabled === true;
+            const userLvl = levels[p.id];
+            const displayLevel = userLvl?.level ?? 0;
+
+            return (
+              <Marker
+                key={p.id}
+                coordinate={{ latitude: p.latitude, longitude: p.longitude }}
+                onPress={() => handleSelectPlace(p)}
+                pinColor={Platform.OS === 'web' ? colors.primary : undefined}
+              >
+                {Platform.OS !== 'web' && (
+                  <View style={{ alignItems: 'center' }}>
+                    {showLevel ? (
+                      <View style={[styles.levelChip, displayLevel === 0 && styles.levelChipZero]}>
+                        <Text style={styles.levelChipText}>Ур. {displayLevel}</Text>
+                      </View>
+                    ) : null}
+                    <View style={[styles.markerBubble, { backgroundColor: colors.primary }]}>
+                      <MaterialCommunityIcons
+                        name={CATEGORY_ICONS[p.category]}
+                        size={16}
+                        color="#fff"
+                      />
+                    </View>
+                  </View>
+                )}
+              </Marker>
+            );
+          })}
 
           {selectedPlace && Platform.OS !== 'web' && (
             <>
@@ -992,6 +1001,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff', elevation: 3,
   },
+  levelChip: {
+    backgroundColor: '#f1c40f', borderRadius: 10,
+    paddingHorizontal: 6, paddingVertical: 2, marginBottom: 2,
+  },
+  levelChipZero: { backgroundColor: '#d0d0d0' },
+  levelChipText: { color: '#000', fontSize: 10, fontWeight: '800' },
   locateBtn: {
     position: 'absolute', top: 16, right: 16, width: 44, height: 44,
     borderRadius: 22, alignItems: 'center', justifyContent: 'center',

@@ -1,7 +1,7 @@
 import { collection, doc, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/config/firebase';
-import { VenueAccount, QuestPhoto } from '@/types';
+import { VenueAccount, QuestPhoto, VenueApplication } from '@/types';
 
 const VENUES_COL = 'venues';
 const PHOTOS_COL = 'photos';
@@ -12,6 +12,14 @@ function fromDoc(id: string, d: any): VenueAccount {
     companyName: d.companyName ?? '',
     contactEmail: d.contactEmail ?? '',
     contactPhone: d.contactPhone ?? '',
+    website: d.website ?? '',
+    regNumber: d.regNumber ?? '',
+    country: d.country ?? '',
+    legalAddress: d.legalAddress ?? '',
+    taxId: d.taxId ?? '',
+    employeeName: d.employeeName ?? '',
+    employeePosition: d.employeePosition ?? '',
+    loginEmail: d.loginEmail ?? '',
     pointsLimit: d.pointsLimit ?? 2,
     pointsUsed: d.pointsUsed ?? 0,
     couponsLimit: d.couponsLimit ?? 2,
@@ -149,4 +157,36 @@ export function subscribeToVenueTransactions(
       cb([]);
     },
   );
+}
+
+// ═══════════════════════════════════════════
+//  ЗАЯВКИ НА РЕГИСТРАЦИЮ
+// ═══════════════════════════════════════════
+export async function submitVenueApplication(data: any) {
+  const fn = httpsCallable<any, { ok: boolean }>(functions, 'submitVenueApplication');
+  return (await fn(data)).data;
+}
+
+export function subscribeToVenueApplications(cb: (apps: VenueApplication[]) => void) {
+  const q = query(
+    collection(db, 'venue_applications'), 
+    where('status', '==', 'pending'), 
+    orderBy('createdAt', 'desc')
+  );
+  return onSnapshot(q, (snap) => {
+    cb(snap.docs.map(d => ({ 
+      ...d.data(), 
+      createdAt: d.data().createdAt?.toMillis?.() ?? 0 
+    } as VenueApplication)));
+  });
+}
+
+export async function approveVenueApplication(applicationId: string) {
+  const fn = httpsCallable<any, { ok: boolean }>(functions, 'approveVenueApplication');
+  return (await fn({ applicationId })).data;
+}
+
+export async function rejectVenueApplication(applicationId: string) {
+  const fn = httpsCallable<any, { ok: boolean }>(functions, 'rejectVenueApplication');
+  return (await fn({ applicationId })).data;
 }

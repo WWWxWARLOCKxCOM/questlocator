@@ -57,7 +57,7 @@ export default function VenueAuthScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={[styles.title, { color: colors.text }]}>Вход для заведения</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Вход только для компаний, чьи аккаунты создал администратор.
+        Вход для зарегистрированных компаний. Если у вас еще нет аккаунта, подайте заявку на регистрацию.
       </Text>
 
       <TextInput
@@ -86,8 +86,17 @@ export default function VenueAuthScreen() {
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Войти</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={[styles.link, { color: colors.primary }]}>
+      <TouchableOpacity 
+        onPress={() => navigation.navigate('VenueRegister')} 
+        style={{ marginTop: 16 }}
+      >
+        <Text style={[styles.link, { color: colors.primary, fontWeight: '700' }]}>
+          Подать заявку на регистрацию компании
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 24 }}>
+        <Text style={[styles.link, { color: colors.textMuted }]}>
           ← Назад ко входу для клиентов
         </Text>
       </TouchableOpacity>
@@ -98,9 +107,9 @@ export default function VenueAuthScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
   title: { fontSize: 24, fontWeight: '800', textAlign: 'center' },
-  subtitle: { textAlign: 'center', marginBottom: 12 },
+  subtitle: { textAlign: 'center', marginBottom: 12, fontSize: 13, lineHeight: 18 },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 15 },
   button: { borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  link: { textAlign: 'center', marginTop: 16 },
+  link: { textAlign: 'center', fontSize: 14 },
 });

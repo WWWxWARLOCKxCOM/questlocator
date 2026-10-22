@@ -8,9 +8,15 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { AdminStackParamList } from '@/navigation/AdminNavigator';
-import { subscribeToAllVenues, updateGlobalSettings } from '@/services/venueService';
+import { 
+  subscribeToAllVenues, 
+  updateGlobalSettings,
+  subscribeToVenueApplications,
+  approveVenueApplication,
+  rejectVenueApplication
+} from '@/services/venueService';
 import { subscribeToAllPlaces } from '@/services/placesService';
-import { Place, PlaceCategory, VenueAccount } from '@/types';
+import { Place, PlaceCategory, VenueAccount, VenueApplication } from '@/types';
 
 type Nav = NativeStackNavigationProp<AdminStackParamList>;
 
@@ -26,6 +32,8 @@ export default function AdminVenuesScreen() {
   const navigation = useNavigation<Nav>();
   const [venues, setVenues] = useState<VenueAccount[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [applications, setApplications] = useState<VenueApplication[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
   
   // Глобальные настройки
   const [pointsPerQuest, setPointsPerQuest] = useState('10');
@@ -34,6 +42,7 @@ export default function AdminVenuesScreen() {
 
   useEffect(() => subscribeToAllVenues(setVenues), []);
   useEffect(() => subscribeToAllPlaces(setPlaces), []);
+  useEffect(() => subscribeToVenueApplications(setApplications), []);
   
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'general'), (snap) => {
@@ -56,16 +65,85 @@ export default function AdminVenuesScreen() {
     }
   };
 
+  const handleApprove = async (id: string) => {
+    setBusyId(id);
+    try {
+      await approveVenueApplication(id);
+      Alert.alert('Успех', 'Компания одобрена и может войти в систему.');
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.message ?? 'Не удалось одобрить заявку');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReject = (id: string) => {
+    Alert.alert(
+      'Отклонить заявку?',
+      'Пользователь не сможет войти в систему, а его данные будут удалены.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Отклонить',
+          style: 'destructive',
+          onPress: async () => {
+            setBusyId(id);
+            try {
+              await rejectVenueApplication(id);
+            } catch (e: any) {
+              Alert.alert('Ошибка', e?.message ?? 'Не удалось отклонить заявку');
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const adminPlaces = useMemo(() => places.filter((p) => !p.ownerUid), [places]);
 
   const sections = useMemo(() => {
-    const result: { title: string; data: any[]; type: 'venue' | 'place' }[] = [];
+    const result: { title: string; data: any[]; type: 'venue' | 'place' | 'app' }[] = [];
+    
+    if (applications.length > 0) {
+      result.push({ title: 'Заявки на регистрацию', type: 'app', data: applications });
+    }
+    
     result.push({ title: 'Заведения', type: 'venue', data: venues });
+    
     if (adminPlaces.length > 0) {
       result.push({ title: 'Точки без владельца', type: 'place', data: adminPlaces });
     }
+    
     return result;
-  }, [venues, adminPlaces]);
+  }, [venues, adminPlaces, applications]);
+
+  const renderApplication = (item: VenueApplication) => (
+    <View style={styles.appRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.name}>{item.companyName}</Text>
+        <Text style={styles.meta}>{item.loginEmail}</Text>
+        <Text style={styles.meta}>{item.employeeName}</Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity 
+          style={[styles.appBtn, { backgroundColor: '#2ecc71' }, busyId === item.uid && { opacity: 0.5 }]} 
+          onPress={() => handleApprove(item.uid)}
+          disabled={busyId === item.uid}
+        >
+          {busyId === item.uid ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.appBtnText}>Одобрить</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.appBtn, { backgroundColor: '#e74c3c' }, busyId === item.uid && { opacity: 0.5 }]} 
+          onPress={() => handleReject(item.uid)}
+          disabled={busyId === item.uid}
+        >
+          <Text style={styles.appBtnText}>Отклонить</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   const renderVenue = (item: VenueAccount) => (
     <TouchableOpacity
@@ -154,17 +232,17 @@ export default function AdminVenuesScreen() {
         style={styles.addBtn}
         onPress={() => navigation.navigate('AdminCreateVenue')}
       >
-        <Text style={styles.addBtnText}>+ Создать заведение</Text>
+        <Text style={styles.addBtnText}>+ Создать заведение вручную</Text>
       </TouchableOpacity>
 
       <SectionList
         sections={sections}
         keyExtractor={(item: any, index) => item.uid ?? item.id ?? String(index)}
-        renderItem={({ item, section }) =>
-          (section as any).type === 'venue'
-            ? renderVenue(item as VenueAccount)
-            : renderPlace(item as Place)
-        }
+        renderItem={({ item, section }) => {
+          if ((section as any).type === 'app') return renderApplication(item as VenueApplication);
+          if ((section as any).type === 'venue') return renderVenue(item as VenueAccount);
+          return renderPlace(item as Place);
+        }}
         renderSectionHeader={({ section }) => (
           <Text style={styles.sectionHeader}>{section.title}</Text>
         )}
@@ -200,6 +278,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee', gap: 12,
   },
+  appRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#eee', gap: 12,
+    backgroundColor: '#fffbea',
+  },
+  appBtn: {
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
+  },
+  appBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   venueIcon: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: '#2c3e50',

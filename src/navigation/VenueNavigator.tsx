@@ -1,7 +1,11 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList, DrawerContentComponentProps } from '@react-navigation/drawer';
+import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { TouchableOpacity, View } from 'react-native';
+import { DrawerActions, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
+
 import VenueMapScreen from '@/screens/venue/VenueMapScreen';
 import VenueAddPlaceScreen from '@/screens/venue/VenueAddPlaceScreen';
 import VenueEditPlaceScreen from '@/screens/venue/VenueEditPlaceScreen';
@@ -14,11 +18,11 @@ import VenueCreateCouponScreen from '@/screens/venue/VenueCreateCouponScreen';
 import VenueCouponScannerScreen from '@/screens/venue/VenueCouponScannerScreen';
 import VenueCouponHistoryScreen from '@/screens/venue/VenueCouponHistoryScreen';
 import VenueFinanceScreen from '@/screens/venue/VenueFinanceScreen';
-import { signOut } from '@/services/authService';
+import CustomVenueDrawer from './CustomVenueDrawer';
 
 export type VenueStackParamList = {
   VenueMap: { focusPlaceId?: string } | undefined;
-  VenueAddPlace: { latitude: number; longitude: number };
+  VenueAddPlace: { latitude: number; longitude: number; address?: string }; // <-- ДОБАВЛЕНО address
   VenueEditPlace: { placeId: string };
   VenueCreateCoupon: undefined;
   VenueCouponScanner: undefined;
@@ -52,31 +56,42 @@ function VenueMainStack() {
   );
 }
 
-function CustomDrawerContent(props: DrawerContentComponentProps) {
+// Кастомный хэдер для главного экрана карты
+function VenueHeader() {
+  const navigation = useNavigation<any>();
+  const { colors } = useTheme();
   return (
-    <DrawerContentScrollView {...props}>
-      <DrawerItemList {...props} />
-      <View style={styles.logoutBlock}>
-        <TouchableOpacity style={styles.logoutButton} onPress={async () => { props.navigation.closeDrawer(); await signOut(); }}>
-          <Text style={styles.logoutText}>Выйти</Text>
-        </TouchableOpacity>
-      </View>
-    </DrawerContentScrollView>
+    <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={{ padding: 8 }}>
+        <Ionicons name="menu" size={26} color={colors.text} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 export default function VenueNavigator() {
+  const { colors } = useTheme();
+
   return (
     <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
-      screenOptions={{ headerShown: true, swipeEnabled: false }}
+      drawerContent={(props) => <CustomVenueDrawer {...props} />}
+      screenOptions={{
+        headerShown: true,
+        swipeEnabled: false,
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
+      }}
     >
-      <Drawer.Screen name="VenueMainStack" component={VenueMainStack} options={{ title: 'Карта', headerShown: false }} />
+      <Drawer.Screen 
+        name="VenueMainStack" 
+        component={VenueMainStack} 
+        options={{ 
+          title: 'Карта', 
+          header: () => <VenueHeader /> 
+        }} 
+      />
       <Drawer.Screen name="VenuePlaces" component={VenuePlacesScreen} options={{ title: 'Управление точками' }} />
-      
-      {/* ИЗМЕНЕНО НАЗВАНИЕ ЗДЕСЬ */}
       <Drawer.Screen name="VenueShop" component={VenueShopScreen} options={{ title: 'Купоны и промокоды' }} />
-      
       <Drawer.Screen name="VenueFinance" component={VenueFinanceScreen} options={{ title: 'Финансы' }} />
       <Drawer.Screen name="VenueScanner" component={VenueCouponScannerScreen} options={{ title: 'Сканировать купон' }} />
       <Drawer.Screen name="VenueHistory" component={VenueCouponHistoryScreen} options={{ title: 'Погашенные купоны' }} />
@@ -86,9 +101,3 @@ export default function VenueNavigator() {
     </Drawer.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  logoutBlock: { marginTop: 24, paddingTop: 16, paddingHorizontal: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#ddd' },
-  logoutButton: { paddingVertical: 12 },
-  logoutText: { color: '#e74c3c', fontWeight: '600', fontSize: 16 },
-});

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Image,
-  Alert, ActivityIndicator, Modal,
+  View, Text, SectionList, StyleSheet, TouchableOpacity, Image,
+  Alert, ActivityIndicator, Modal, TextInput,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,7 +10,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { db } from '@/config/firebase';
 import { subscribeToActiveCoupons, subscribeToUserCoupons, buyCoupon } from '@/services/couponService';
-import { Coupon, UserCoupon } from '@/types';
+import { subscribeToAllVenues } from '@/services/venueService'; // <-- ДОБАВЛЕНО
+import { Coupon, UserCoupon, VenueAccount } from '@/types';
 
 function formatDate(ms: number) {
   if (!ms) return '';
@@ -22,14 +23,18 @@ export default function ShopScreen() {
   const { colors } = useTheme();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [myCoupons, setMyCoupons] = useState<UserCoupon[]>([]);
+  const [venues, setVenues] = useState<VenueAccount[]>([]);
   const [tab, setTab] = useState<'shop' | 'mine'>('shop');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [balance, setBalance] = useState(0);
   const [qrVisible, setQrVisible] = useState<UserCoupon | null>(null);
+  
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const u1 = subscribeToActiveCoupons(setCoupons);
-    return () => u1();
+    const u2 = subscribeToAllVenues(setVenues); // <-- ЗАГРУЖАЕМ ЗАВЕДЕНИЯ
+    return () => { u1(); u2(); };
   }, []);
 
   useEffect(() => {
@@ -40,6 +45,48 @@ export default function ShopScreen() {
     });
     return () => { u1(); u2(); };
   }, [user]);
+
+  // Группировка купонов по заведениям с учетом поиска
+  const companySections = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    
+    // Сначала группируем
+    const groups: Record<string, { companyName: string; coupons: Coupon[] }> = {};
+    coupons.forEach(c => {
+      const isAdmin = !c.ownerUid;
+      const ownerKey = c.ownerUid || 'admin';
+      const venue = venues.find(v => v.uid === c.ownerUid);
+      
+      if (!groups[ownerKey]) {
+        groups[ownerKey] = {
+          companyName: isAdmin ? 'QuestLocator' : (venue?.companyName || 'Заведение'),
+          coupons: [],
+        };
+      }
+      groups[ownerKey].coupons.push(c);
+    });
+
+    let result = Object.values(groups).map(g => ({
+      title: g.companyName,
+      data: g.coupons,
+    }));
+
+    // Затем фильтруем по поиску
+    if (q) {
+      result = result.map(section => {
+        const companyMatch = section.title.toLowerCase().includes(q);
+        const matchingCoupons = section.data.filter(c => 
+          c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
+        );
+        if (companyMatch) return section; // Если название компании совпало, показываем все ее купоны
+        if (matchingCoupons.length > 0) return { ...section, data: matchingCoupons }; // Иначе только подходящие
+        return null;
+      }).filter(Boolean) as { title: string; data: Coupon[] }[];
+    }
+
+    // Сортируем секции по алфавиту
+    return result.sort((a, b) => a.title.localeCompare(b.title));
+  }, [coupons, venues, searchQuery]);
 
   const handleBuy = (c: Coupon) => {
     if (balance < c.pricePoints) {
@@ -132,14 +179,52 @@ export default function ShopScreen() {
       </View>
 
       {tab === 'shop' ? (
-        <FlatList
-          data={coupons} keyExtractor={(c) => c.id} renderItem={renderCoupon}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={<Text style={[styles.empty, { color: colors.textMuted }]}>Купонов пока нет</Text>}
-        />
+        <View style={{ flex: 1 }}>
+          {/* Поисковая строка */}
+          <View style={[styles.searchWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Ionicons name="search" size={20} color={colors.textMuted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Поиск заведения или купона..."
+              placeholderTextColor={colors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <SectionList
+            sections={companySections}
+            keyExtractor={(c) => c.id}
+            renderItem={renderCoupon}
+            renderSectionHeader={({ section: { title } }) => (
+              <Text style={[styles.sectionTitle, { color: colors.text, backgroundColor: colors.background }]}>
+                {title}
+              </Text>
+            )}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              <Text style={[styles.empty, { color: colors.textMuted }]}>
+                {searchQuery ? 'Ничего не найдено' : 'Купонов пока нет'}
+              </Text>
+            }
+            stickySectionHeadersEnabled={false}
+          />
+        </View>
       ) : (
-        <FlatList
-          data={myCoupons} keyExtractor={(c) => c.id} renderItem={renderMyCoupon}
+        <SectionList
+          sections={[{ title: 'Мои купоны и промокоды', data: myCoupons }]}
+          keyExtractor={(c) => c.id}
+          renderItem={renderMyCoupon}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={[styles.sectionTitle, { color: colors.text, backgroundColor: colors.background }]}>
+              {title}
+            </Text>
+          )}
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={[styles.empty, { color: colors.textMuted }]}>Вы ещё ничего не купили</Text>}
         />
@@ -169,8 +254,15 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   tab: { flex: 1, borderRadius: 20, paddingVertical: 8, alignItems: 'center' },
   tabText: { fontWeight: '700', fontSize: 12 },
-  list: { padding: 16, paddingBottom: 40 },
-  card: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, marginBottom: 12 },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, height: 44,
+    borderRadius: 12, borderWidth: StyleSheet.hairlineWidth,
+  },
+  searchInput: { flex: 1, fontSize: 15 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginTop: 16, marginBottom: 8, paddingHorizontal: 16 },
+  list: { paddingBottom: 40 },
+  card: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, marginBottom: 12, marginHorizontal: 16 },
   img: { width: '100%', height: 140, alignItems: 'center', justifyContent: 'center' },
   body: { padding: 12 },
   title: { fontWeight: '800', fontSize: 16 },

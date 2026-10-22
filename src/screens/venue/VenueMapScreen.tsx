@@ -6,14 +6,16 @@ import MapView, {
   Marker, PROVIDER_GOOGLE, Circle, MapPressEvent,
 } from 'react-native-maps';
 import {
-  DrawerActions, useNavigation, useRoute, RouteProp,
+  useNavigation, useRoute, RouteProp,
 } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { VenueStackParamList } from '@/navigation/VenueNavigator';
 import { subscribeToPlacesByOwner } from '@/services/placesService';
 import { subscribeToVenue, deleteMyPlace } from '@/services/venueService';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 import { Place, PlaceCategory, VenueAccount, GeoPoint } from '@/types';
 
 type Nav = NativeStackNavigationProp<VenueStackParamList, 'VenueMap'>;
@@ -34,11 +36,14 @@ export default function VenueMapScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const { user } = useAuth();
+  const { colors } = useTheme();
 
   const [places, setPlaces] = useState<Place[]>([]);
   const [venue, setVenue] = useState<VenueAccount | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [newPoint, setNewPoint] = useState<GeoPoint | null>(null);
+  const [newPointAddress, setNewPointAddress] = useState('');
+  const [isAddingMode, setIsAddingMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -75,15 +80,49 @@ export default function VenueMapScreen() {
   const pointsLimit = venue?.pointsLimit ?? 2;
   const couponsLimit = venue?.couponsLimit ?? 2;
   const canCreateMore = (venue?.pointsUsed ?? 0) < pointsLimit;
+  const isPending = venue?.isActive === false;
 
-  const handleLongPress = (e: MapPressEvent) => {
-    if (!canCreateMore) return;
-    setSelectedPlace(null);
-    setNewPoint(e.nativeEvent.coordinate);
+  // Обработка нажатия на карту
+  const handleMapPress = async (e: MapPressEvent) => {
+    if (!isAddingMode) {
+      setSelectedPlace(null);
+      return;
+    }
+
+    const coord = e.nativeEvent.coordinate;
+    setNewPoint(coord);
+    setNewPointAddress('Определение адреса...');
+
+    try {
+      const res = await Location.reverseGeocodeAsync(coord);
+      if (res[0]) {
+        const p = res[0];
+        const addr = [p.street, p.name, p.city, p.region, p.country].filter(Boolean).join(', ');
+        setNewPointAddress(addr || 'Адрес не определен');
+      } else {
+        setNewPointAddress('Адрес не найден');
+      }
+    } catch {
+      setNewPointAddress('Ошибка при определении адреса');
+    }
   };
 
-  const handleDragEnd = (e: any) => {
-    setNewPoint(e.nativeEvent.coordinate);
+  const handleDragEnd = async (e: any) => {
+    if (!isAddingMode) return;
+    const coord = e.nativeEvent.coordinate;
+    setNewPoint(coord);
+    setNewPointAddress('Определение адреса...');
+    
+    try {
+      const res = await Location.reverseGeocodeAsync(coord);
+      if (res[0]) {
+        const p = res[0];
+        const addr = [p.street, p.name, p.city, p.region, p.country].filter(Boolean).join(', ');
+        setNewPointAddress(addr || 'Адрес не определен');
+      }
+    } catch {
+      setNewPointAddress('Ошибка при определении адреса');
+    }
   };
 
   const handleCreate = () => {
@@ -91,11 +130,16 @@ export default function VenueMapScreen() {
     navigation.navigate('VenueAddPlace', {
       latitude: newPoint.latitude,
       longitude: newPoint.longitude,
+      address: newPointAddress !== 'Определение адреса...' ? newPointAddress : undefined,
     });
     setNewPoint(null);
+    setIsAddingMode(false);
   };
 
-  const handleCancelNew = () => setNewPoint(null);
+  const handleCancelNew = () => {
+    setNewPoint(null);
+    setIsAddingMode(false);
+  };
 
   const handleEdit = () => {
     if (!selectedPlace) return;
@@ -128,6 +172,13 @@ export default function VenueMapScreen() {
     );
   };
 
+  // Сбрасываем режим добавления, если нажали "Мои точки"
+  const handleOpenList = () => {
+    setIsAddingMode(false);
+    setNewPoint(null);
+    navigation.navigate('VenuePlaces');
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -135,32 +186,37 @@ export default function VenueMapScreen() {
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
         showsUserLocation={Platform.OS !== 'web'}
-        onLongPress={handleLongPress}
-        onPress={() => setSelectedPlace(null)}
+        onPress={handleMapPress}
       >
         {places.map((p) => (
           <React.Fragment key={p.id}>
             <Marker
               coordinate={{ latitude: p.latitude, longitude: p.longitude }}
-              onPress={() => setSelectedPlace(p)}
+              onPress={() => {
+                if (!isAddingMode) setSelectedPlace(p);
+              }}
               tracksViewChanges={Platform.OS !== 'web'}
-              pinColor={Platform.OS === 'web' ? '#2c3e50' : undefined}
+              pinColor={Platform.OS === 'web' ? colors.primary : undefined}
             >
               {Platform.OS !== 'web' && (
                 <View style={styles.markerWrap}>
-                  <View style={styles.markerBubble}>
+                  <View style={[styles.markerBubble, { backgroundColor: colors.text }]}>
                     <MaterialCommunityIcons
                       name={CATEGORY_ICONS[p.category]}
                       size={18}
-                      color="#fff"
+                      color={colors.background}
                     />
                   </View>
-                  <View style={styles.markerLabel}>
-                    <Text style={styles.markerLabelText} numberOfLines={1}>{p.name}</Text>
+                  <View style={[styles.markerLabel, { backgroundColor: colors.surface }]}>
+                    <Text style={[styles.markerLabelText, { color: colors.text }]} numberOfLines={1}>
+                      {p.name}
+                    </Text>
                     {isFoodCategory(p.category) &&
                       typeof p.averageCheck === 'number' &&
                       p.averageCheck > 0 && (
-                        <Text style={styles.markerCheckText}>от {p.averageCheck} ₽</Text>
+                        <Text style={[styles.markerCheckText, { color: colors.success }]}>
+                          от {p.averageCheck} ₽
+                        </Text>
                       )}
                   </View>
                 </View>
@@ -170,8 +226,8 @@ export default function VenueMapScreen() {
               <Circle
                 center={{ latitude: p.latitude, longitude: p.longitude }}
                 radius={p.radiusMeters ?? 50}
-                strokeColor="rgba(44,62,80,0.8)"
-                fillColor="rgba(44,62,80,0.15)"
+                strokeColor={`${colors.primary}CC`}
+                fillColor={`${colors.primary}26`}
               />
             )}
           </React.Fragment>
@@ -183,106 +239,157 @@ export default function VenueMapScreen() {
               coordinate={newPoint}
               draggable={Platform.OS !== 'web'}
               onDragEnd={Platform.OS !== 'web' ? handleDragEnd : undefined}
-              pinColor="#e67e22"
+              pinColor={colors.warning}
             />
             {Platform.OS !== 'web' && (
               <Circle
                 center={newPoint}
                 radius={50}
-                strokeColor="rgba(230,126,34,0.9)"
-                fillColor="rgba(230,126,34,0.15)"
+                strokeColor={`${colors.warning}CC`}
+                fillColor={`${colors.warning}26`}
               />
             )}
           </>
         )}
       </MapView>
 
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.hamburger}
-          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-        >
-          <Ionicons name="menu" size={24} color="#000" />
-        </TouchableOpacity>
+      {/* Плашка предупреждения, если аккаунт на модерации */}
+      {isPending && (
+        <View style={{ position: 'absolute', top: 76, left: 16, right: 16, backgroundColor: '#f39c12', padding: 12, borderRadius: 8, zIndex: 10 }}>
+          <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Аккаунт на модерации. Ожидайте одобрения администратора.</Text>
+        </View>
+      )}
 
-        <View style={styles.balanceBadge}>
-          <Text style={styles.balanceLabel}>Баллы:</Text>
-          <Text style={styles.balanceText}>{venue?.balance ?? 0}</Text>
+      {/* Верхний бар: баланс и лимиты (в стиле темы) */}
+      <View style={styles.topBar}>
+        <View style={{ flex: 1 }} />
+        
+        <View style={[styles.balanceBadge, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.balanceLabel, { color: colors.textMuted }]}>Баллы:</Text>
+          <Text style={[styles.balanceText, { color: colors.text }]}>{venue?.balance ?? 0}</Text>
         </View>
 
-        <View style={styles.limitsBadge}>
+        <View style={[styles.limitsBadge, { backgroundColor: colors.surface }]}>
           <View style={styles.limitItem}>
-            <MaterialCommunityIcons name="map-marker" size={14} color="#2c3e50" />
-            <Text style={styles.limitText}>{venue?.pointsUsed ?? 0} / {pointsLimit}</Text>
+            <MaterialCommunityIcons name="map-marker" size={14} color={colors.primary} />
+            <Text style={[styles.limitText, { color: colors.text }]}>{venue?.pointsUsed ?? 0} / {pointsLimit}</Text>
           </View>
           <View style={styles.limitItem}>
-            <MaterialCommunityIcons name="ticket-percent" size={14} color="#e67e22" />
-            <Text style={styles.limitText}>{venue?.couponsUsed ?? 0} / {couponsLimit}</Text>
+            <MaterialCommunityIcons name="ticket-percent" size={14} color={colors.warning} />
+            <Text style={[styles.limitText, { color: colors.text }]}>{venue?.couponsUsed ?? 0} / {couponsLimit}</Text>
           </View>
         </View>
       </View>
 
-      {canCreateMore && !newPoint && !selectedPlace && (
-        <View style={styles.hintBox} pointerEvents="none">
-          <Text style={styles.hintText}>
-            Долгое нажатие по карте — поставить точку
+      {/* Подсказка в режиме добавления */}
+      {isAddingMode && !newPoint && (
+        <View style={[styles.hintBox, { backgroundColor: colors.surface }]} pointerEvents="none">
+          <Text style={[styles.hintText, { color: colors.text }]}>
+            Нажмите на карту, чтобы выбрать место
           </Text>
         </View>
       )}
 
-      {!canCreateMore && !selectedPlace && (
-        <View style={styles.limitBox} pointerEvents="none">
-          <Text style={styles.limitTextAlert}>Лимит исчерпан. Обратитесь к админу.</Text>
+      {/* Плашка лимита, если исчерпан */}
+      {!canCreateMore && !selectedPlace && !isAddingMode && (
+        <View style={[styles.limitBox, { backgroundColor: '#fdecea' }]} pointerEvents="none">
+          <Text style={[styles.limitTextAlert, { color: colors.danger }]}>
+            Лимит точек исчерпан. Обратитесь к админу.
+          </Text>
         </View>
       )}
 
+      {/* Нижние кнопки (только когда ничего не выбрано и не в режиме добавления) */}
+      {!selectedPlace && !newPoint && !isAddingMode && (
+        <View style={styles.bottomButtons}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: isPending ? '#95a5a6' : colors.primary }]}
+            onPress={() => {
+              if (isPending) {
+                Alert.alert('Аккаунт на модерации', 'Вы не можете создавать точки, пока администратор не одобрит вашу заявку.');
+                return;
+              }
+              if (!canCreateMore) {
+                Alert.alert('Лимит исчерпан', 'Обратитесь к администратору для увеличения лимита точек.');
+                return;
+              }
+              setIsAddingMode(true);
+            }}
+          >
+            <MaterialCommunityIcons name="map-marker-plus" size={20} color="#fff" />
+            <Text style={styles.actionBtnText}>{isAddingMode ? 'Отменить выбор' : 'Создать точку'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+            onPress={handleOpenList}
+          >
+            <MaterialCommunityIcons name="format-list-bulleted" size={20} color={colors.text} />
+            <Text style={[styles.actionBtnText, { color: colors.text }]}>Мои точки</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Плашка создания новой точки */}
       {newPoint && (
-        <View style={styles.newPointCard}>
-          <Text style={styles.newPointTitle}>Новая точка</Text>
-          <Text style={styles.newPointCoords}>
-            {newPoint.latitude.toFixed(6)}, {newPoint.longitude.toFixed(6)}
+        <View style={[styles.newPointCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.newPointTitle, { color: colors.text }]}>Новая точка</Text>
+          <Text style={[styles.newPointAddress, { color: colors.textMuted }]}>
+            {newPointAddress}
           </Text>
-          <Text style={styles.newPointHint}>
+          <Text style={[styles.newPointHint, { color: colors.textMuted }]}>
             Перетащите маркер для точной установки
           </Text>
           <View style={styles.newPointActions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelNew}>
-              <Text style={styles.cancelText}>Отмена</Text>
+            <TouchableOpacity
+              style={[styles.cancelBtn, { backgroundColor: colors.surfaceAlt }]}
+              onPress={handleCancelNew}
+            >
+              <Text style={{ color: colors.text, fontWeight: '600' }}>Отмена</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.createBtn} onPress={handleCreate}>
-              <Text style={styles.createText}>Создать точку</Text>
+            <TouchableOpacity
+              style={[styles.createBtn, { backgroundColor: colors.primary }]}
+              onPress={handleCreate}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Создать</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
+      {/* Плашка выбранной существующей точки */}
       {selectedPlace && (
-        <View style={styles.placeCard}>
-          <Text style={styles.placeName}>{selectedPlace.name}</Text>
-          <Text style={styles.placeAddr}>{selectedPlace.address}</Text>
-          <Text style={styles.placeMeta}>Радиус: {selectedPlace.radiusMeters} м</Text>
+        <View style={[styles.placeCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.placeName, { color: colors.text }]}>{selectedPlace.name}</Text>
+          <Text style={[styles.placeAddr, { color: colors.textMuted }]}>{selectedPlace.address}</Text>
+          <Text style={[styles.placeMeta, { color: colors.textMuted }]}>
+            Радиус: {selectedPlace.radiusMeters} м
+          </Text>
           {isFoodCategory(selectedPlace.category) && selectedPlace.averageCheck ? (
-            <Text style={styles.placeMeta}>
+            <Text style={[styles.placeMeta, { color: colors.success }]}>
               Средний чек: от {selectedPlace.averageCheck} ₽
             </Text>
           ) : null}
 
           <View style={styles.placeActions}>
             <TouchableOpacity
-              style={styles.closeBtn}
+              style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
               onPress={() => setSelectedPlace(null)}
             >
-              <Text style={styles.closeText}>Закрыть</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.editBtn} onPress={handleEdit}>
-              <Text style={styles.editText}>Изменить</Text>
+              <Text style={{ color: colors.text, fontWeight: '600', fontSize: 12 }}>Закрыть</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.deleteBtn, busy && { opacity: 0.6 }]}
+              style={[styles.editBtn, { backgroundColor: colors.primary }]}
+              onPress={handleEdit}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Изменить</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.deleteBtn, { backgroundColor: colors.danger }, busy && { opacity: 0.6 }]}
               onPress={handleDeletePlace}
               disabled={busy}
             >
-              <Text style={styles.deleteText}>Удалить</Text>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Удалить</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -295,91 +402,91 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   topBar: {
     position: 'absolute', 
-    top: 40, 
+    top: 16, 
     left: 16, 
     right: 16,
     flexDirection: 'row', 
-    justifyContent: 'space-between', 
     alignItems: 'flex-start',
-  },
-  hamburger: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center', elevation: 4,
+    gap: 8,
   },
   balanceBadge: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 16, height: 44, elevation: 4,
+    borderRadius: 20, paddingHorizontal: 16, height: 44, elevation: 4,
   },
-  balanceLabel: { fontSize: 14, fontWeight: '600', color: '#666', marginRight: 4 },
-  balanceText: { fontWeight: '800', fontSize: 16, color: '#2c3e50' },
+  balanceLabel: { fontSize: 14, fontWeight: '600', marginRight: 4 },
+  balanceText: { fontWeight: '800', fontSize: 16 },
   limitsBadge: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 8, elevation: 4, gap: 4,
+    borderRadius: 12, padding: 8, elevation: 4, gap: 4,
   },
   limitItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  limitText: { fontWeight: '700', fontSize: 12, color: '#333' },
+  limitText: { fontWeight: '700', fontSize: 12 },
+
   hintBox: {
-    position: 'absolute', top: 96, left: 16, right: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 10,
-    padding: 10, alignItems: 'center', elevation: 2,
+    position: 'absolute', top: 76, left: 16, right: 16,
+    borderRadius: 10, padding: 10, alignItems: 'center', elevation: 2,
   },
-  hintText: { fontSize: 13, color: '#333' },
+  hintText: { fontSize: 13 },
+
   limitBox: {
-    position: 'absolute', bottom: 24, left: 16, right: 16,
-    backgroundColor: '#fdecea', borderRadius: 10, padding: 14,
+    position: 'absolute', bottom: 90, left: 16, right: 16,
+    borderRadius: 10, padding: 14,
     alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#e74c3c',
   },
-  limitTextAlert: { color: '#c0392b', fontWeight: '600' },
+  limitTextAlert: { fontWeight: '600' },
+
+  bottomButtons: {
+    position: 'absolute', bottom: 24, left: 16, right: 16,
+    flexDirection: 'row', gap: 12,
+  },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    padding: 16, borderRadius: 12, elevation: 4, gap: 8,
+  },
+  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
   newPointCard: {
     position: 'absolute', bottom: 24, left: 16, right: 16,
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, elevation: 4,
+    borderRadius: 12, padding: 16, elevation: 4,
   },
   newPointTitle: { fontWeight: '700', fontSize: 15 },
-  newPointCoords: { color: '#666', fontSize: 12, marginTop: 2 },
-  newPointHint: { color: '#999', fontSize: 12, marginTop: 4, fontStyle: 'italic' },
+  newPointAddress: { fontSize: 13, marginTop: 4 },
+  newPointHint: { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
   newPointActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   cancelBtn: {
-    flex: 1, backgroundColor: '#ecf0f1', borderRadius: 8,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center',
   },
-  cancelText: { color: '#2c3e50', fontWeight: '600' },
   createBtn: {
-    flex: 2, backgroundColor: '#2c3e50', borderRadius: 8,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 2, borderRadius: 8, paddingVertical: 12, alignItems: 'center',
   },
-  createText: { color: '#fff', fontWeight: '700' },
+
   placeCard: {
     position: 'absolute', bottom: 24, left: 16, right: 16,
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, elevation: 4,
+    borderRadius: 12, padding: 16, elevation: 4,
   },
   placeName: { fontWeight: '700', fontSize: 16 },
-  placeAddr: { color: '#666', fontSize: 13, marginTop: 2 },
-  placeMeta: { color: '#888', fontSize: 12, marginTop: 4 },
+  placeAddr: { fontSize: 13, marginTop: 2 },
+  placeMeta: { fontSize: 12, marginTop: 4 },
   placeActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   closeBtn: {
-    flex: 1, backgroundColor: '#ecf0f1', borderRadius: 8,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center',
   },
-  closeText: { color: '#2c3e50', fontWeight: '600', fontSize: 12 },
   editBtn: {
-    flex: 1, backgroundColor: '#3498db', borderRadius: 8,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center',
   },
-  editText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   deleteBtn: {
-    flex: 1, backgroundColor: '#e74c3c', borderRadius: 8,
-    paddingVertical: 12, alignItems: 'center',
+    flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center',
   },
-  deleteText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+
   markerWrap: { alignItems: 'center' },
   markerBubble: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#2c3e50', alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
   markerLabel: {
-    marginTop: 2, backgroundColor: '#fff', paddingHorizontal: 6,
+    marginTop: 2, paddingHorizontal: 6,
     paddingVertical: 2, borderRadius: 6, maxWidth: 130, alignItems: 'center',
   },
-  markerLabelText: { fontSize: 11, fontWeight: '600', color: '#222' },
-  markerCheckText: { fontSize: 10, color: '#27ae60', fontWeight: '700', marginTop: 1 },
+  markerLabelText: { fontSize: 11, fontWeight: '600' },
+  markerCheckText: { fontSize: 10, fontWeight: '700', marginTop: 1 },
 });

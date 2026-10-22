@@ -51,6 +51,7 @@ export default function VenueShopScreen() {
   };
 
   const canCreate = (venue?.couponsUsed ?? 0) < (venue?.couponsLimit ?? 1);
+  const isPending = venue?.isActive === false;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -61,9 +62,13 @@ export default function VenueShopScreen() {
         <TouchableOpacity
           style={[
             styles.addBtn,
-            { backgroundColor: canCreate ? colors.primary : colors.surfaceAlt },
+            { backgroundColor: (canCreate && !isPending) ? colors.primary : colors.surfaceAlt },
           ]}
           onPress={() => {
+            if (isPending) {
+              Alert.alert('Аккаунт на модерации', 'Вы не можете создавать купоны до одобрения заявки.');
+              return;
+            }
             if (!canCreate) {
               Alert.alert('Лимит исчерпан', 'Обратитесь к администратору.');
               return;
@@ -74,12 +79,12 @@ export default function VenueShopScreen() {
           <MaterialCommunityIcons
             name="plus"
             size={18}
-            color={canCreate ? '#fff' : colors.textMuted}
+            color={(canCreate && !isPending) ? '#fff' : colors.textMuted}
           />
           <Text
             style={[
               styles.addBtnText,
-              { color: canCreate ? '#fff' : colors.textMuted },
+              { color: (canCreate && !isPending) ? '#fff' : colors.textMuted },
             ]}
           >
             Создать

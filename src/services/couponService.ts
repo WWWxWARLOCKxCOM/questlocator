@@ -47,7 +47,14 @@ export function subscribeToActiveCoupons(cb: (coupons: Coupon[]) => void) {
     where('isActive', '==', true),
     orderBy('createdAt', 'desc'),
   );
-  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => fromDoc(d.id, d.data()))), (err) => {
+  return onSnapshot(q, (snap) => {
+    const now = Date.now();
+    const coupons = snap.docs
+      .map((d) => fromDoc(d.id, d.data()))
+      // Оставляем только те, у которых нет срока действия или он еще не истек
+      .filter((c) => !c.expiresAt || c.expiresAt === 0 || c.expiresAt > now);
+    cb(coupons);
+  }, (err) => {
     console.warn('[couponService] active coupons error:', err.message);
     cb([]);
   });

@@ -10,6 +10,7 @@ const db = admin.firestore();
 
 const ADMIN_EMAIL = defineSecret('ADMIN_EMAIL');
 const QUEST_COOLDOWN_HOURS = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function distanceM(
   a: { lat: number; lng: number },
@@ -25,17 +26,14 @@ function distanceM(
   return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-// ═══════════════════════════════════════════
-//  УРОВНИ: ХЕЛПЕРЫ
-// ═══════════════════════════════════════════
 type LevelResetPeriod = 'month' | '3months' | '6months' | 'year' | 'never';
 
 function periodToMs(p: LevelResetPeriod | undefined): number | null {
   switch (p) {
-    case 'month': return 30 * 24 * 60 * 60 * 1000;
-    case '3months': return 90 * 24 * 60 * 60 * 1000;
-    case '6months': return 180 * 24 * 60 * 60 * 1000;
-    case 'year': return 365 * 24 * 60 * 60 * 1000;
+    case 'month': return 30 * DAY_MS;
+    case '3months': return 90 * DAY_MS;
+    case '6months': return 180 * DAY_MS;
+    case 'year': return 365 * DAY_MS;
     case 'never':
     default:
       return null;
@@ -106,10 +104,10 @@ export const createPlace = onCall(async (req) => {
     }
     const venue = venueSnap.data()!;
     if (venue.isActive === false) {
-      throw new HttpsError('permission-denied', 'Аккаунт заведения заблокирован');
+      throw new HttpsError('permission-denied', 'Аккаунт заведения на модерации');
     }
     const used = venue.pointsUsed ?? 0;
-    const limit = venue.pointsLimit ?? 2; // Базовый лимит 2
+    const limit = venue.pointsLimit ?? 2;
     if (used >= limit) {
       throw new HttpsError('failed-precondition', 'Лимит точек исчерпан');
     }
@@ -125,7 +123,6 @@ export const createPlace = onCall(async (req) => {
   const ref = db.collection('places').doc();
   const placeId = ref.id;
 
-  // Вычисляем дату следующего списания (ровно через 1 месяц)
   const nextBillingDate = new Date();
   nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
 
@@ -147,7 +144,7 @@ export const createPlace = onCall(async (req) => {
     qrCode: '',
     levels: levels ?? null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    nextBillingDate: admin.firestore.Timestamp.fromDate(nextBillingDate), // <-- ДОБАВЛЕНО
+    nextBillingDate: admin.firestore.Timestamp.fromDate(nextBillingDate),
   });
 
   if (finalOwnerUid) {
@@ -575,7 +572,6 @@ async function finalizeSession(sessionId: string, userId: string, forced: boolea
       tx.set(levelRef, newLevelData, { merge: true });
     }
 
-    // ─── НАЧИСЛЕНИЕ БАЛЛОВ ЗАВЕДЕНИЮ ───
     if (timeDone && place && place.ownerUid) {
       const settingsRef = db.collection('settings').doc('general');
       const settingsSnap = await tx.get(settingsRef);
@@ -596,7 +592,6 @@ async function finalizeSession(sessionId: string, userId: string, forced: boolea
       }
     }
 
-    // ─── УВЕДОМЛЕНИЕ ОБ ОКОНЧАНИИ КВЕСТА ───
     const notifRef = db.collection('notifications').doc();
     tx.set(notifRef, {
       userId,
@@ -1412,7 +1407,7 @@ export const deleteQuest = onCall(async (req) => {
 });
 
 // ═══════════════════════════════════════════
-//  УДАЛЕНИЕ СВОЕЙ ТОЧКИ
+//  УДАЛЕНИЕ СВОЕЙ ТОЧКИ (со штрафом)
 // ═══════════════════════════════════════════
 export const deleteMyPlace = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
@@ -1429,6 +1424,15 @@ export const deleteMyPlace = onCall(async (req) => {
   if (place.ownerUid !== req.auth.uid) {
     throw new HttpsError('permission-denied', 'Это не ваша точка');
   }
+
+  const now = Date.now();
+  const createdAt = place.createdAt?.toMillis?.() ?? now;
+  const daysPassed = (now - createdAt) / DAY_MS;
+  const weeks = Math.min(4, Math.max(1, Math.ceil(daysPassed / 7)));
+
+  const settingsSnap = await db.collection('settings').doc('general').get();
+  const monthlyCost = settingsSnap.exists ? (settingsSnap.data()?.monthlyCostPerPlace ?? 100) : 100;
+  const penalty = Math.round(monthlyCost * (weeks / 4));
 
   const [questsSnap, photosSnap, levelsSnap] = await Promise.all([
     db.collection('quests').where('placeId', '==', placeId).get(),
@@ -1452,15 +1456,20 @@ export const deleteMyPlace = onCall(async (req) => {
   }
 
   const venueRef = db.collection('venues').doc(req.auth.uid);
-  const venueSnap = await venueRef.get();
-  if (venueSnap.exists) {
-    const used = venueSnap.data()!.pointsUsed ?? 0;
-    if (used > 0) {
-      await venueRef.update({
-        pointsUsed: admin.firestore.FieldValue.increment(-1),
-      });
-    }
-  }
+  await db.runTransaction(async (tx) => {
+    tx.update(venueRef, {
+      pointsUsed: admin.firestore.FieldValue.increment(-1),
+      balance: admin.firestore.FieldValue.increment(-penalty),
+    });
+    const vtxRef = db.collection('venue_transactions').doc();
+    tx.set(vtxRef, {
+      venueUid: req.auth.uid,
+      type: 'admin_adjustment',
+      amount: -penalty,
+      description: `Досрочное удаление точки (${weeks} нед., штраф ${penalty} б.)`,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
 
   try {
     await admin.storage().bucket().deleteFiles({
@@ -1491,9 +1500,115 @@ export const deleteMyPlace = onCall(async (req) => {
 });
 
 // ═══════════════════════════════════════════
+//  ЗАПЛАНИРОВАННОЕ УДАЛЕНИЕ ТОЧЕК
+// ═══════════════════════════════════════════
+export const schedulePlaceDeletion = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  
+  const { placeId, deleteAtMs, weeks } = req.data as any;
+  const venueUid = req.auth.uid;
+  
+  const placeRef = db.collection('places').doc(placeId);
+  const placeSnap = await placeRef.get();
+  
+  if (!placeSnap.exists) throw new HttpsError('not-found', 'Точка не найдена');
+  const place = placeSnap.data();
+  
+  if (place?.ownerUid !== venueUid && req.auth.token.admin !== true) {
+    throw new HttpsError('permission-denied', 'Нет прав');
+  }
+
+  if (deleteAtMs === null) {
+    await placeRef.update({
+      scheduledDeletionAt: admin.firestore.FieldValue.delete(),
+      scheduledDeletionWeeks: admin.firestore.FieldValue.delete(),
+    });
+    return { ok: true };
+  }
+
+  await placeRef.update({
+    scheduledDeletionAt: admin.firestore.Timestamp.fromMillis(deleteAtMs),
+    scheduledDeletionWeeks: weeks,
+  });
+
+  return { ok: true };
+});
+
+export const processScheduledDeletions = onSchedule(
+  { schedule: 'every 1 hours', timeZone: 'Europe/Moscow' },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const query = db.collection('places').where('scheduledDeletionAt', '<=', now);
+    const snap = await query.get();
+    
+    if (snap.empty) return;
+
+    for (const doc of snap.docs) {
+      const place = doc.data();
+      const placeId = doc.id;
+      
+      if (place.ownerUid && place.scheduledDeletionWeeks) {
+        const settingsSnap = await db.collection('settings').doc('general').get();
+        const monthlyCost = settingsSnap.exists ? (settingsSnap.data()?.monthlyCostPerPlace ?? 100) : 100;
+        const penalty = Math.round(monthlyCost * (place.scheduledDeletionWeeks / 4));
+        
+        const venueRef = db.collection('venues').doc(place.ownerUid);
+        await db.runTransaction(async (tx) => {
+          tx.update(venueRef, { 
+            balance: admin.firestore.FieldValue.increment(-penalty),
+            pointsUsed: admin.firestore.FieldValue.increment(-1),
+          });
+          const vtxRef = db.collection('venue_transactions').doc();
+          tx.set(vtxRef, {
+            venueUid: place.ownerUid,
+            type: 'admin_adjustment',
+            amount: -penalty,
+            description: `Плановое удаление точки (${place.scheduledDeletionWeeks} нед.)`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+      }
+
+      const [questsSnap, photosSnap, levelsSnap] = await Promise.all([
+        db.collection('quests').where('placeId', '==', placeId).get(),
+        db.collection('photos').where('placeId', '==', placeId).get(),
+        db.collection('user_levels').where('placeId', '==', placeId).get(),
+      ]);
+
+      const allRefs: FirebaseFirestore.DocumentReference[] = [
+        doc.ref,
+        ...questsSnap.docs.map((d) => d.ref),
+        ...photosSnap.docs.map((d) => d.ref),
+        ...levelsSnap.docs.map((d) => d.ref),
+      ];
+
+      const BATCH = 400;
+      for (let i = 0; i < allRefs.length; i += BATCH) {
+        const chunk = allRefs.slice(i, i + BATCH);
+        const batch = db.batch();
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
+
+      try {
+        await admin.storage().bucket().deleteFiles({ prefix: `places-photos/${placeId}/` });
+      } catch (e: any) {}
+
+      try {
+        for (const photoDoc of photosSnap.docs) {
+          const p = photoDoc.data();
+          if (p.imagePath) {
+            try { await admin.storage().bucket().file(p.imagePath).delete(); } catch {}
+          }
+        }
+      } catch (e: any) {}
+    }
+  }
+);
+
+// ═══════════════════════════════════════════
 //  МАГАЗИН КУПОНОВ
 // ═══════════════════════════════════════════
-
 function generateCouponCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let out = '';
@@ -1527,6 +1642,7 @@ export const createCoupon = onCall(async (req) => {
     const venueSnap = await venueRef.get();
     if (!venueSnap.exists) throw new HttpsError('permission-denied', 'Заведение не найдено');
     const venue = venueSnap.data()!;
+    if (venue.isActive === false) throw new HttpsError('permission-denied', 'Аккаунт на модерации');
     const used = venue.couponsUsed ?? 0;
     const limit = venue.couponsLimit ?? 2;
 
@@ -1714,7 +1830,6 @@ export const buyCoupon = onCall(async (req) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // УВЕДОМЛЕНИЕ О ПОКУПКЕ
     const notifRef = db.collection('notifications').doc();
     tx.set(notifRef, {
       userId: req.auth!.uid,
@@ -1762,7 +1877,6 @@ export const redeemCoupon = onCall(async (req) => {
     usedByName: venueName,
   });
 
-  // УВЕДОМЛЕНИЕ О ПОГАШЕНИИ
   await db.collection('notifications').add({
     userId: uc.userId,
     title: 'Купон погашен',
@@ -1852,27 +1966,23 @@ export const cleanupExpiredCoupons = onSchedule(
 );
 
 // ═══════════════════════════════════════════
-//  ИНДИВИДУАЛЬНЫЕ ЕЖЕМЕСЯЧНЫЕ СПИСАНИЯ (запуск каждый день)
+//  ИНДИВИДУАЛЬНЫЕ ЕЖЕМЕСЯЧНЫЕ СПИСАНИЯ
 // ═══════════════════════════════════════════
 export const processMonthlyVenuePayments = onSchedule(
-  { schedule: '0 0 * * *', timeZone: 'Europe/Moscow' }, // <-- Запуск каждый день в полночь
+  { schedule: '0 0 * * *', timeZone: 'Europe/Moscow' },
   async () => {
     const settingsSnap = await db.collection('settings').doc('general').get();
     const monthlyCost = settingsSnap.exists ? (settingsSnap.data()?.monthlyCostPerPlace ?? 100) : 100;
     if (monthlyCost <= 0) return;
 
     const now = new Date();
-
-    // Получаем все активные точки
     const placesSnap = await db.collection('places').where('isActive', '==', true).get();
 
     for (const placeDoc of placesSnap.docs) {
       const place = placeDoc.data();
       const venueUid = place.ownerUid;
-
       if (!venueUid) continue;
 
-      // Вычисляем дату списания (если поля нет, берем от даты создания)
       let nextBillingDate: Date;
       if (place.nextBillingDate) {
         nextBillingDate = place.nextBillingDate.toDate();
@@ -1880,24 +1990,18 @@ export const processMonthlyVenuePayments = onSchedule(
         nextBillingDate = new Date(place.createdAt.toMillis());
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
       } else {
-        // Фоллбэк для старых точек без даты
         nextBillingDate = new Date();
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
       }
 
-      // Если дата наступила (сегодня или в прошлом)
       if (nextBillingDate <= now) {
         const vRef = db.collection('venues').doc(venueUid);
-        
-        // Переносим дату ровно на 1 месяц вперед
         const newNextBillingDate = new Date(nextBillingDate);
         newNextBillingDate.setMonth(newNextBillingDate.getMonth() + 1);
 
         await db.runTransaction(async (tx) => {
-          // Списываем деньги
           tx.update(vRef, { balance: admin.firestore.FieldValue.increment(-monthlyCost) });
           
-          // Записываем в историю
           const txRef = db.collection('venue_transactions').doc();
           tx.set(txRef, {
             venueUid,
@@ -1907,7 +2011,6 @@ export const processMonthlyVenuePayments = onSchedule(
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          // Обновляем дату следующего списания для точки
           tx.update(placeDoc.ref, {
             nextBillingDate: admin.firestore.Timestamp.fromDate(newNextBillingDate)
           });
@@ -1934,3 +2037,138 @@ export const cleanupVenueTransactions = onSchedule(
     }
   }
 );
+
+// ═══════════════════════════════════════════
+//  ЗАЯВКИ НА РЕГИСТРАЦИЮ КОМПАНИЙ
+// ═══════════════════════════════════════════
+export const submitVenueApplication = onCall(async (req) => {
+  const data = req.data;
+  
+  if (!data.companyName || !data.regNumber || !data.loginEmail || !data.password) {
+    throw new HttpsError('invalid-argument', 'Заполните обязательные поля');
+  }
+
+  try {
+    // Создаем пользователя (не блокируем его, чтобы он мог зайти)
+    const userRecord = await admin.auth().createUser({
+      email: data.loginEmail,
+      password: data.password,
+    });
+
+    // Сразу выдаем права заведения
+    await admin.auth().setCustomUserClaims(userRecord.uid, { venue: true });
+
+    // Сохраняем профиль пользователя
+    await db.collection('users').doc(userRecord.uid).set({
+      uid: userRecord.uid,
+      name: data.employeeName,
+      email: data.loginEmail,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Создаем аккаунт заведения с флагом isActive: false
+    await db.collection('venues').doc(userRecord.uid).set({
+      uid: userRecord.uid,
+      companyName: data.companyName,
+      contactEmail: data.corporateEmail,
+      contactPhone: data.companyPhone,
+      website: data.website || '',
+      regNumber: data.regNumber,
+      country: data.country,
+      legalAddress: data.legalAddress,
+      taxId: data.taxId,
+      employeeName: data.employeeName,
+      employeePosition: data.employeePosition || '',
+      loginEmail: data.loginEmail,
+      pointsLimit: 2,
+      pointsUsed: 0,
+      couponsLimit: 2,
+      couponsUsed: 0,
+      balance: 0,
+      isActive: false, // На модерации
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Сохраняем саму заявку
+    await db.collection('venue_applications').doc(userRecord.uid).set({
+      uid: userRecord.uid,
+      companyName: data.companyName,
+      regNumber: data.regNumber,
+      country: data.country,
+      legalAddress: data.legalAddress,
+      taxId: data.taxId,
+      corporateEmail: data.corporateEmail,
+      companyPhone: data.companyPhone,
+      employeeName: data.employeeName,
+      employeePosition: data.employeePosition || '',
+      website: data.website || '',
+      loginEmail: data.loginEmail,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true };
+  } catch (e: any) {
+    if (e?.code === 'auth/email-already-exists') {
+      throw new HttpsError('already-exists', 'Этот email уже зарегистрирован');
+    }
+    throw new HttpsError('internal', e?.message || 'Ошибка при создании заявки');
+  }
+});
+
+export const approveVenueApplication = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
+
+  const { applicationId } = req.data;
+  if (!applicationId) throw new HttpsError('invalid-argument', 'ID заявки обязателен');
+
+  const appRef = db.collection('venue_applications').doc(applicationId);
+  const appSnap = await appRef.get();
+  if (!appSnap.exists) throw new HttpsError('not-found', 'Заявка не найдена');
+
+  const app = appSnap.data()!;
+  if (app.status !== 'pending') throw new HttpsError('failed-precondition', 'Заявка уже обработана');
+
+  // 1. Активируем заведение
+  const venueRef = db.collection('venues').doc(applicationId);
+  await venueRef.update({ isActive: true });
+  
+  // 2. Меняем статус заявки
+  await appRef.update({ status: 'approved', approvedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+  // 3. Отправляем уведомление
+  await db.collection('notifications').add({
+    userId: applicationId,
+    title: 'Аккаунт активирован',
+    body: 'Ваша заявка одобрена! Теперь вам доступны все функции: создание точек, купонов и сканирование.',
+    type: 'account_approved',
+    isRead: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true };
+});
+
+export const rejectVenueApplication = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Не авторизован');
+  if (!req.auth.token.admin) throw new HttpsError('permission-denied', 'Только админ');
+
+  const { applicationId } = req.data;
+  
+  // 1. Удаляем Auth пользователя
+  try {
+    await admin.auth().deleteUser(applicationId);
+  } catch (e) {}
+
+  // 2. Удаляем профиль заведения
+  await db.collection('venues').doc(applicationId).delete();
+  
+  // 3. Удаляем пользователя из коллекции users
+  await db.collection('users').doc(applicationId).delete();
+  
+  // 4. Удаляем заявку
+  await db.collection('venue_applications').doc(applicationId).delete();
+
+  return { ok: true };
+});

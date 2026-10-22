@@ -29,6 +29,8 @@ function fromDoc(id: string, d: any): Place {
     levels: d.levels ?? undefined,
     createdAt: d.createdAt?.toMillis?.() ?? 0,
     nextBillingDate: d.nextBillingDate?.toMillis?.() ?? 0,
+    scheduledDeletionAt: d.scheduledDeletionAt?.toMillis?.() ?? undefined,
+    scheduledDeletionWeeks: d.scheduledDeletionWeeks ?? undefined,
   };
 }
 
@@ -134,25 +136,20 @@ export async function createPlace(input: CreatePlaceInput): Promise<string> {
 
   const placeId = res.data.placeId;
 
-  // Сохраняем уровни (если заданы) — через updatePlace, чтобы не зависеть
-  // от того, принимает ли createPlace поле levels.
   if (input.levels) {
     try {
       await updatePlace(placeId, { levels: input.levels });
     } catch (e: any) {
-      // eslint-disable-next-line no-console
       console.warn('[placesService] levels save failed:', e?.message);
     }
   }
 
-  // Загружаем фото и обновляем документ
   if (input.photoUri) {
     try {
       const url = await uploadPlacePhoto(placeId, input.photoUri);
       const fn2 = httpsCallable(functions, 'updatePlacePhoto');
       await fn2({ placeId, photoUrl: url });
     } catch (e: any) {
-      // eslint-disable-next-line no-console
       console.warn('[placesService] photo upload failed:', e?.message);
     }
   }
@@ -160,7 +157,6 @@ export async function createPlace(input: CreatePlaceInput): Promise<string> {
   return placeId;
 }
 
-/** Владелец / админ: обновить простое поле точки. */
 export async function updatePlace(id: string, patch: Partial<Place>): Promise<void> {
   const fn = httpsCallable<{ placeId: string; patch: Record<string, unknown> }, { ok: boolean }>(
     functions,
@@ -169,17 +165,28 @@ export async function updatePlace(id: string, patch: Partial<Place>): Promise<vo
   await fn({ placeId: id, patch });
 }
 
-/** Удалить точку — только админ. */
 export async function deletePlace(id: string): Promise<void> {
   const fn = httpsCallable<{ placeId: string }, { ok: boolean }>(functions, 'deletePlace');
   await fn({ placeId: id });
 }
 
-/** Админ: подвязать существующую точку к аккаунту заведения. */
 export async function assignPlaceOwner(placeId: string, ownerUid: string | null) {
   const fn = httpsCallable<
     { placeId: string; ownerUid: string | null },
     { ok: boolean }
   >(functions, 'assignPlaceOwner');
   return (await fn({ placeId, ownerUid })).data;
+}
+
+/** Запланировать удаление точки на точное время (или отменить) */
+export async function schedulePlaceDeletion(
+  placeId: string,
+  deleteAtMs: number | null,
+  weeks: number = 0,
+): Promise<void> {
+  const fn = httpsCallable<
+    { placeId: string; deleteAtMs: number | null; weeks: number },
+    { ok: boolean }
+  >(functions, 'schedulePlaceDeletion');
+  await fn({ placeId, deleteAtMs, weeks });
 }

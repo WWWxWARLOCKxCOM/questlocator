@@ -7,21 +7,20 @@ export type LevelResetPeriod = 'month' | '3months' | '6months' | 'year' | 'never
 
 export interface LevelConfig {
   enabled: boolean;
-  completionsPerLevel: number;   // сколько прохождений на 1 уровень
-  maxLevel: number;              // максимум уровней (например, 4)
-  discounts: number[];           // скидка в % на каждом уровне. discounts[0] = скидка на 1 уровне
-  resetPeriod: LevelResetPeriod; // через сколько сбрасывается прогресс
+  completionsPerLevel: number;   
+  maxLevel: number;              
+  discounts: number[];           
+  resetPeriod: LevelResetPeriod; 
 }
 
-/** Личный уровень пользователя в конкретном заведении. */
 export interface UserLevel {
-  id: string;                    // `${userId}__${placeId}`
+  id: string;                    
   userId: string;
   placeId: string;
-  level: number;                 // текущий уровень (1..maxLevel)
-  completionsAtThisLevel: number;// сколько пройдено на текущем уровне
-  totalCompletions: number;      // всего пройдено в этом заведении
-  lastCompletedAt: number;       // ms последнего завершения
+  level: number;                 
+  completionsAtThisLevel: number;
+  totalCompletions: number;      
+  lastCompletedAt: number;       
   updatedAt: number;
 }
 
@@ -64,12 +63,37 @@ export interface VenueAccount {
   companyName: string;
   contactEmail: string;
   contactPhone?: string;
+  website?: string;             
+  regNumber: string;            
+  country: string;              
+  legalAddress: string;         
+  taxId: string;                
+  employeeName: string;         
+  employeePosition?: string;    
+  loginEmail: string;           
   pointsLimit: number;
   pointsUsed: number;
   couponsLimit: number;
   couponsUsed: number;
-  balance: number;               // ← НОВОЕ: баллы заведения
+  balance: number;               
   isActive: boolean;
+  createdAt: number;
+}
+
+export interface VenueApplication {
+  uid: string;
+  companyName: string;
+  regNumber: string;
+  country: string;
+  legalAddress: string;
+  taxId: string;
+  corporateEmail: string;
+  companyPhone: string;
+  employeeName: string;
+  employeePosition?: string;
+  website?: string;
+  loginEmail: string;
+  status: 'pending' | 'approved' | 'rejected';
   createdAt: number;
 }
 
@@ -92,7 +116,9 @@ export interface Place {
   radiusMeters: number;
   levels?: LevelConfig;
   createdAt: number;
-  nextBillingDate?: number;      // ← НОВОЕ: дата следующего списания
+  nextBillingDate?: number;      
+  scheduledDeletionAt?: number;  
+  scheduledDeletionWeeks?: number; 
 }
 
 export interface Quest {
@@ -181,22 +207,19 @@ export interface GeoPoint {
   longitude: number;
 }
 
-// ═══════════════════════════════════════════
-//  МАГАЗИН КУПОНОВ
-// ═══════════════════════════════════════════
 export interface Coupon {
   id: string;
-  ownerUid?: string | null;   // null = админский купон, иначе uid заведения
+  ownerUid?: string | null;   
   title: string;
   description: string;
   photoUrl?: string;
-  pricePoints: number;        // цена в баллах
-  validUntil?: number;        // ms — срок действия самого купона (для покупателя)
-  expiresAt?: number;         // ms — после этой даты купон убирается из магазина (0 = бесконечно)
-  maxPurchases?: number;      // максимум покупок (0 = неограниченно)
-  maxPerUser?: number;        // максимум покупок одним человеком (0 = неограниченно)
-  cooldownHours?: number;     // часов до следующей покупки (0 = сразу)
-  purchasedCount: number;     // сколько уже куплено
+  pricePoints: number;        
+  validUntil?: number;        
+  expiresAt?: number;         
+  maxPurchases?: number;      
+  maxPerUser?: number;        
+  cooldownHours?: number;     
+  purchasedCount: number;     
   isActive: boolean;
   createdAt: number;
 }
@@ -208,17 +231,14 @@ export interface UserCoupon {
   title: string;
   description: string;
   photoUrl?: string;
-  code: string;               // уникальный код
-  validUntil: number;         // ms — до какой даты купон действует
-  usedAt?: number;            // когда использован (undefined = не использован)
-  usedByUid?: string;         // uid заведения, которое погасило
-  usedByName?: string;        // название заведения, которое погасило
+  code: string;               
+  validUntil: number;         
+  usedAt?: number;            
+  usedByUid?: string;         
+  usedByName?: string;        
   createdAt: number;
 }
 
-// ═══════════════════════════════════════════
-//  ФИНАНСЫ ЗАВЕДЕНИЙ
-// ═══════════════════════════════════════════
 export interface VenueTransaction {
   id: string;
   venueUid: string;
@@ -233,22 +253,16 @@ export interface GlobalSettings {
   monthlyCostPerPlace: number;
 }
 
-// ═══════════════════════════════════════════
-//  УВЕДОМЛЕНИЯ (НОВОЕ)
-// ═══════════════════════════════════════════
 export interface Notification {
   id: string;
   userId: string;
   title: string;
   body: string;
-  type: 'quest_reward' | 'coupon_buy' | 'coupon_redeem';
+  type: 'quest_reward' | 'coupon_buy' | 'coupon_redeem' | 'account_approved';
   isRead: boolean;
   createdAt: number;
 }
 
-// ═══════════════════════════════════════════
-//  КОНСТАНТЫ
-// ═══════════════════════════════════════════
 export const CATEGORY_LABELS: Record<PlaceCategory, string> = {
   restaurant: 'Ресторан',
   cafe: 'Кафе',
