@@ -18,8 +18,8 @@ import VenueCreateCouponScreen from '@/screens/venue/VenueCreateCouponScreen';
 import VenueCouponScannerScreen from '@/screens/venue/VenueCouponScannerScreen';
 import VenueCouponHistoryScreen from '@/screens/venue/VenueCouponHistoryScreen';
 import VenueFinanceScreen from '@/screens/venue/VenueFinanceScreen';
-import VenueEventsScreen from '@/screens/venue/VenueEventsScreen'; // <-- ДОБАВЛЕНО
-import VenueCreateEventScreen from '@/screens/venue/VenueCreateEventScreen'; // <-- ДОБАВЛЕНО
+import VenueEventsScreen from '@/screens/venue/VenueEventsScreen'; 
+import VenueCreateEventScreen from '@/screens/venue/VenueCreateEventScreen'; 
 import CustomVenueDrawer from './CustomVenueDrawer';
 
 export type VenueStackParamList = {
@@ -29,14 +29,14 @@ export type VenueStackParamList = {
   VenueCreateCoupon: undefined;
   VenueCouponScanner: undefined;
   VenueCouponHistory: undefined;
-  VenueCreateEvent: undefined; // <-- ДОБАВЛЕНО
+  VenueCreateEvent: undefined; 
 };
 
 export type VenueDrawerParamList = {
   VenueMainStack: undefined;
   VenuePlaces: undefined;
   VenueShop: undefined;
-  VenueEvents: undefined; // <-- ДОБАВЛЕНО
+  VenueEvents: undefined; 
   VenueFinance: undefined;
   VenueScanner: undefined;
   VenueHistory: undefined;
@@ -56,12 +56,11 @@ function VenueMainStack() {
       <Stack.Screen name="VenueEditPlace" component={VenueEditPlaceScreen} options={{ title: 'Редактировать точку', headerShown: true }} />
       <Stack.Screen name="VenueCreateCoupon" component={VenueCreateCouponScreen} options={{ title: 'Новый купон', headerShown: true }} />
       <Stack.Screen name="VenueCouponScanner" component={VenueCouponScannerScreen} options={{ title: 'Сканер купонов', headerShown: true }} />
-      <Stack.Screen name="VenueCreateEvent" component={VenueCreateEventScreen} options={{ title: 'Новое мероприятие', headerShown: true }} /> {/* <-- ДОБАВЛЕНО */}
+      <Stack.Screen name="VenueCreateEvent" component={VenueCreateEventScreen} options={{ title: 'Новое мероприятие', headerShown: true }} /> 
     </Stack.Navigator>
   );
 }
 
-// Кастомный хэдер для главного экрана карты
 function VenueHeader() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
@@ -87,17 +86,10 @@ export default function VenueNavigator() {
         headerTintColor: colors.text,
       }}
     >
-      <Drawer.Screen 
-        name="VenueMainStack" 
-        component={VenueMainStack} 
-        options={{ 
-          title: 'Карта', 
-          header: () => <VenueHeader /> 
-        }} 
-      />
+      <Drawer.Screen name="VenueMainStack" component={VenueMainStack} options={{ title: 'Карта', header: () => <VenueHeader /> }} />
       <Drawer.Screen name="VenuePlaces" component={VenuePlacesScreen} options={{ title: 'Управление точками' }} />
       <Drawer.Screen name="VenueShop" component={VenueShopScreen} options={{ title: 'Купоны и промокоды' }} />
-      <Drawer.Screen name="VenueEvents" component={VenueEventsScreen} options={{ title: 'Мероприятия' }} /> {/* <-- ДОБАВЛЕНО */}
+      <Drawer.Screen name="VenueEvents" component={VenueEventsScreen} options={{ title: 'Мероприятия' }} /> 
       <Drawer.Screen name="VenueFinance" component={VenueFinanceScreen} options={{ title: 'Финансы' }} />
       <Drawer.Screen name="VenueScanner" component={VenueCouponScannerScreen} options={{ title: 'Сканировать купон' }} />
       <Drawer.Screen name="VenueHistory" component={VenueCouponHistoryScreen} options={{ title: 'Погашенные купоны' }} />
